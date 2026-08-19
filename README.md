@@ -33,9 +33,19 @@
 
 ---
 
+## 📦 下载（Release）
+
+- [SFMOnline_Relay_Windows_v1.0.0.zip](release/SFMOnline_Relay_Windows_v1.0.0.zip)：Windows 一键版（解压后双击 启动联机服.bat）
+- [SFMOnline_Relay_Linux_v1.0.0.zip](release/SFMOnline_Relay_Linux_v1.0.0.zip)：Linux 一键版（解压后 ./start.sh）
+- 客户端只需下载 SFMOnline_1.0.0.dll 放入 BepInEx/plugins/，无需编译。
+
+---
+
 ## 🖥️ 联机服务器
 
 支持 **Windows 一键启动** 与 **Linux（systemd / 脚本）**，自带网页后台。
+
+> ⚠️ **联机服务器运行过程中必须与总服进行数据共享（master_report）**，否则将无法正常开展服务器，无论是否位于总服服务器列表中；未配置 master_report 会直接拒绝启动。
 
 ```bash
 # Linux
@@ -47,6 +57,12 @@ chmod +x start.sh stop.sh
 Windows 直接双击 `启动联机服.bat`。
 
 配置见 [联机服务器配置教程](relay/联机服务器配置教程.md) / [Relay Server Config Guide](relay/Relay-Server-Config-EN.md)。
+
+---
+
+## 📜 协议与说明
+
+数据共享协议、用户协议、连接服务器的部署协议、免责协议等详见 [AGREEMENTS.md](AGREEMENTS.md) / [AGREEMENTS_EN.md](AGREEMENTS_EN.md)。
 
 ---
 

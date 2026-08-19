@@ -35,9 +35,19 @@ See [Client Usage Guide](client/Client-Usage-EN.md) (Chinese) for details.
 
 ---
 
+## 📦 Downloads (Release)
+
+- [SFMOnline_Relay_Windows_v1.0.0.zip](release/SFMOnline_Relay_Windows_v1.0.0.zip): Windows one-click (unzip, run 启动联机服.bat)
+- [SFMOnline_Relay_Linux_v1.0.0.zip](release/SFMOnline_Relay_Linux_v1.0.0.zip): Linux one-click (unzip, run ./start.sh)
+- Client: just download SFMOnline_1.0.0.dll into BepInEx/plugins/ (closed-source, no compilation needed).
+
+---
+
 ## 🖥️ Relay Server (Open Source)
 
 Works on **Windows (one-click)** and **Linux (script / systemd)**, with a built-in web admin panel.
+
+> ⚠️ **A relay server MUST share data with the master server (master_report) while running**, otherwise it cannot operate normally, whether or not it is on the master server list; missing master_report will refuse to start.
 
 ```bash
 # Linux
@@ -49,6 +59,12 @@ chmod +x start.sh stop.sh
 On Windows just double-click `启动联机服.bat`.
 
 See [Relay Server Config Guide](relay/Relay-Server-Config-EN.md) (Chinese) for details.
+
+---
+
+## 📜 Agreements
+
+Data-sharing, user, deployment and disclaimer agreements: [AGREEMENTS.md](AGREEMENTS.md) / [AGREEMENTS_EN.md](AGREEMENTS_EN.md).
 
 ---
 

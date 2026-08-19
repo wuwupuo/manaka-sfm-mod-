@@ -1,4 +1,4 @@
-import json, os, socket, ipaddress, socketserver, threading, time, urllib.request, urllib.error, hashlib, hmac, base64, random, zlib, struct, ssl, re, unicodedata
+import json, os, socket, ipaddress, socketserver, threading, time, urllib.request, urllib.error, hashlib, hmac, base64, random, zlib, struct, ssl, re, unicodedata, sys
 from collections import defaultdict, deque
 from cryptography.hazmat.primitives.ciphers import Cipher, algorithms, modes
 from cryptography.hazmat.backends import default_backend
@@ -30,6 +30,10 @@ def merge_cfg(patch):
     save_cfg(cfg)
 
 CFG = load_cfg()
+MASTER_REQUIRED = str(CFG.get("master_report", "")).strip()
+if not MASTER_REQUIRED:
+    print("[FATAL] master_report is required: the relay must share data with the master server to run. Please set master_report in config.json.", flush=True)
+    sys.exit(1)
 HOST = str(CFG.get("host", "0.0.0.0"))
 PORT = int(CFG.get("port", 7000))
 DOMAIN = str(CFG.get("domain", "wuwupuo.ccwu.cc"))
