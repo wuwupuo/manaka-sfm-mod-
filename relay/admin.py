@@ -6,6 +6,7 @@ ST = os.environ.get("SFM_STATE", "/opt/sfm-relay/state.json")
 CMD = os.environ.get("SFM_CMD", "/opt/sfm-relay/commands.json")
 LOG = os.environ.get("SFM_LOG", "/opt/sfm-relay/relay.log")
 ADMIN_PORT = int(os.environ.get("SFM_ADMIN_PORT", "7001"))
+ADMIN_HOST = os.environ.get("SFM_ADMIN_HOST", "127.0.0.1")
 SESS = {}
 LOGIN_FAIL = {}
 
@@ -378,4 +379,4 @@ class H(BaseHTTPRequestHandler):
         if any(new.get(k) != cfg.get(k) for k in restart_keys):
             subprocess.run(["systemctl", "restart", "sfm-relay"])
 
-HTTPServer(("127.0.0.1", ADMIN_PORT), H).serve_forever()
+HTTPServer((ADMIN_HOST, ADMIN_PORT), H).serve_forever()
