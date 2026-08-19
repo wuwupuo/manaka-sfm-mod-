@@ -679,7 +679,7 @@ class Handler(socketserver.BaseRequestHandler):
         return True
 
     def handle(self):
-        self.request.settimeout(ROOM_TIMEOUT + 60)
+        self.request.settimeout(60)  # 客户端每30秒心跳，60秒无流量视为掉线
         newline = bytes([10])
         while not self.abusive:
             try:
