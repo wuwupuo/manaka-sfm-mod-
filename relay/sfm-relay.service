@@ -1,0 +1,18 @@
+[Unit]
+Description=SFM Online Relay
+After=network.target
+
+[Service]
+Type=simple
+WorkingDirectory=/opt/sfm-relay
+Environment=SFM_CFG=/opt/sfm-relay/config.json
+Environment=SFM_STATE=/opt/sfm-relay/state.json
+Environment=SFM_CMD=/opt/sfm-relay/commands.json
+Environment=SFM_LOG=/opt/sfm-relay/relay.log
+Environment=SFM_ADMIN_PORT=7001
+ExecStart=/usr/bin/python3 /opt/sfm-relay/relay.py
+Restart=always
+RestartSec=3
+
+[Install]
+WantedBy=multi-user.target
