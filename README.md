@@ -35,9 +35,11 @@
 
 ## 📦 下载（Release）
 
-- [SFMOnline_Relay_Windows_v1.0.0.zip](release/SFMOnline_Relay_Windows_v1.0.0.zip)：Windows 一键版（解压后双击 启动联机服.bat）
-- [SFMOnline_Relay_Linux_v1.0.0.zip](release/SFMOnline_Relay_Linux_v1.0.0.zip)：Linux 一键版（解压后 ./start.sh）
+- [SFMOnline_Relay_Windows_v1.0.1.zip](release/SFMOnline_Relay_Windows_v1.0.1.zip)：Windows 一键版（解压后双击 启动联机服.bat）
+- [SFMOnline_Relay_Linux_v1.0.1.zip](release/SFMOnline_Relay_Linux_v1.0.1.zip)：Linux 一键版（解压后 ./start.sh）
 - 客户端只需下载 SFMOnline_1.0.0.dll 放入 BepInEx/plugins/，无需编译。
+
+> v1.0.1 修复：放宽联机服务器速率限制（RATE_LIMIT 600→4000），流量过大时仅丢弃+限频警告，不再直接断开玩家连接（解决玩家进房约10秒即被踢线的问题）。
 
 ---
 

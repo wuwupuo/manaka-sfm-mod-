@@ -147,7 +147,7 @@ def make_captcha():
 IP_CONNS = {}
 IP_MSG_TIMES = {}
 MAX_CONN_PER_IP = 10
-RATE_LIMIT = 600
+RATE_LIMIT = 4000
 MAX_FRAME_BYTES = 256 * 1024
 MAX_BUFFER_BYTES = 512 * 1024
 MAX_CHAT_CHARS = 2000
@@ -694,10 +694,20 @@ class Handler(socketserver.BaseRequestHandler):
                 break
             while newline in self.buf:
                 line, self.buf = self.buf.split(newline, 1)
-                if len(line) > MAX_FRAME_BYTES or not self.allow_rate("all", RATE_LIMIT, 10.0):
-                    send(self.request, {"t": "rejected", "code": "rate_limited", "msg": "消息过大或发送过快"})
-                    self.abusive = True
-                    break
+                frame_ok = len(line) <= MAX_FRAME_BYTES
+                if not frame_ok or not self.allow_rate("all", RATE_LIMIT, 10.0):
+                    # 流量过大时只丢弃/警告，不再直接踢下线。
+                    stamp = time.time()
+                    if frame_ok and stamp - getattr(self, "_rate_warn_at", 0.0) >= 1.0:
+                        self._rate_warn_at = stamp
+                        send(self.request, {"t": "rejected", "code": "rate_limited", "msg": "消息过大或发送过快"})
+                    elif not frame_ok:
+                        self._bad_frames = getattr(self, "_bad_frames", 0) + 1
+                        if self._bad_frames >= 20:
+                            send(self.request, {"t": "rejected", "code": "frame_too_large", "msg": "消息过大"})
+                            self.abusive = True
+                            break
+                    continue
                 try:
                     raw = json.loads(line.decode("utf-8"))
                     if self.key and isinstance(raw, dict) and "e" in raw:
