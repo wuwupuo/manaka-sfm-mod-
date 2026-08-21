@@ -91,6 +91,8 @@ Windows 直接双击 `启动联机服.bat`。
 - GitHub：[https://github.com/wuwupuo/manaka-sfm-mod-](https://github.com/wuwupuo/manaka-sfm-mod-)
 
 ---
+赞助
+zanzhu.wuwupuo.cc.cd
 
 ## ⚖️ 免责声明
 
