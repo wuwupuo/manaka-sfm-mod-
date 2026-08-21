@@ -94,6 +94,9 @@ Please include: server name, server address (domain/IP:port), admin contact, ser
 - GitHub: [https://github.com/wuwupuo/manaka-sfm-mod-](https://github.com/wuwupuo/manaka-sfm-mod-)
 
 ---
+## 🎁 Sponsorship
+
+https://zanzhu.wuwupuo.cc.cd
 
 ## ⚖️ Disclaimer
 
