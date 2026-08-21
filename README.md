@@ -93,7 +93,7 @@ Windows 直接双击 `启动联机服.bat`。
 ---
 
 ## 🚀赞助
-zanzhu.wuwupuo.cc.cd
+https://zanzhu.wuwupuo.cc.cd
 
 
 ## ⚖️ 免责声明
