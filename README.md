@@ -24,7 +24,7 @@
 ## 🚀 客户端使用教程
 
 1. 安装整合包要求的 BepInEx 环境（游戏本体）。
-2. 客户端为**闭源**：从本仓库 [client/SFMOnline_1.0.0.dll](client/SFMOnline_1.0.0.dll) 下载编译好的 DLL，重命名为 `SFMOnline.dll` 放到 `BepInEx/plugins/`。
+2. 客户端为**闭源**：从本仓库 [client/SFMOnline_1.0.2.dll](client/SFMOnline_1.0.2.dll) 下载编译好的 DLL，重命名为 `SFMOnline.dll` 放到 `BepInEx/plugins/`。
 3. 启动游戏：`F10` 联机菜单、`F12` 普通菜单、`F11` 聊天。
 4. 登录后：`F10` → 总服务器列表选择服务器 → 房间页创建/加入房间；或局域网/内网穿透房间。
 5. 游戏内按 `Alt+F3` 随时强制恢复所有控制状态。
@@ -37,9 +37,9 @@
 
 - [SFMOnline_Relay_Windows_v1.0.2.zip](release/SFMOnline_Relay_Windows_v1.0.2.zip)：Windows 一键版（解压后双击 启动联机服.bat）
 - [SFMOnline_Relay_Linux_v1.0.2.zip](release/SFMOnline_Relay_Linux_v1.0.2.zip)：Linux 一键版（解压后 ./start.sh）
-- 客户端只需下载 SFMOnline_1.0.0.dll 放入 BepInEx/plugins/，无需编译。
+- [SFMOnline_Client_v1.0.2.zip](release/SFMOnline_Client_v1.0.2.zip)：客户端整合包（解压后把 BepInEx 内容放入游戏目录，或直接下载 client/SFMOnline_1.0.2.dll 放入 BepInEx/plugins/）。
 
-> **v1.0.2 更新**：优化多房间同步性能（骨同步/动作同步加服务端限频，3人以上逐步降低移动同步频率），解决 3-4 人同房时同步卡顿、控制命令延迟/丢失导致被控角色动不了的问题。
+> **v1.0.2 更新**：优化多房间同步性能（骨同步/动作同步加服务端限频，客户端运动/骨骼同步降频），解决多人同房同步卡顿、控制命令延迟/丢失导致被控角色动不了的问题。
 >
 > v1.0.1 修复：放宽联机服务器速率限制（RATE_LIMIT 600→4000），流量过大时仅丢弃+限频警告，不再直接断开玩家连接（解决玩家进房约10秒即被踢线的问题）。
 
