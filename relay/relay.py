@@ -796,7 +796,7 @@ class Handler(socketserver.BaseRequestHandler):
             stamp = time.time()
             room = rooms.get(rid, {})
             player_count = len(room.get("players", {}))
-            motion_hz = 18.0 if player_count <= 4 else (15.0 if player_count <= 7 else 12.0)
+            motion_hz = 16.0 if player_count <= 3 else (12.0 if player_count <= 5 else (10.0 if player_count <= 7 else 8.0))
             signature = (
                 1 if m.get("moving") else 0,
                 1 if m.get("crouch") else 0,
@@ -838,11 +838,17 @@ class Handler(socketserver.BaseRequestHandler):
                 broadcast_room(rid, payload, self.uid)
         elif t == "bone_sync":
             rid = clients.get(self.uid, {}).get("room", "")
-            if rid:
+            bc = clients.get(self.uid)
+            bone_stamp = time.time()
+            if rid and bc and bone_stamp - float(bc.get("last_bone_at", 0.0)) >= 1.0 / 6.0:
+                bc["last_bone_at"] = bone_stamp
                 broadcast_room(rid, {"t": "bone_sync", "uid": self.uid, "slot": int(m.get("slot", 0)), "q": m.get("q", [])}, self.uid)
         elif t == "action_sync":
             rid = clients.get(self.uid, {}).get("room", "")
-            if rid:
+            ac = clients.get(self.uid)
+            act_stamp = time.time()
+            if rid and ac and act_stamp - float(ac.get("last_action_at", 0.0)) >= 1.0 / 8.0:
+                ac["last_action_at"] = act_stamp
                 broadcast_room(rid, {
                     "t": "action_sync", "uid": self.uid, "slot": int(m.get("slot", 0)),
                     "act": int(m.get("act", -1)), "hash": int(m.get("hash", 0)),
@@ -925,7 +931,7 @@ class Handler(socketserver.BaseRequestHandler):
             previous_sock = previous.get("sock") if previous else None
             if previous_sock is not None:
                 socket_clients.pop(id(previous_sock), None)
-            clients[uid] = {"name": name, "ip": self.peer_ip, "room": "", "sock": self.request, "key": key, "_send_lock": threading.Lock(), "last_state_at": 0.0, "last_motion_at": 0.0}
+            clients[uid] = {"name": name, "ip": self.peer_ip, "room": "", "sock": self.request, "key": key, "_send_lock": threading.Lock(), "last_state_at": 0.0, "last_motion_at": 0.0, "last_bone_at": 0.0, "last_action_at": 0.0}
             socket_clients[id(self.request)] = uid
         try:
             confirmed = master_call("confirm", {"domain": DOMAIN, "sid": sid}, 8)
