@@ -7,6 +7,7 @@ CMD = os.environ.get("SFM_CMD", "/opt/sfm-relay/commands.json")
 LOG = os.environ.get("SFM_LOG", "/opt/sfm-relay/relay.log")
 ADMIN_PORT = int(os.environ.get("SFM_ADMIN_PORT", "7001"))
 ADMIN_HOST = os.environ.get("SFM_ADMIN_HOST", "127.0.0.1")
+BASE = os.environ.get("SFM_ADMIN_BASE", "/wuwupuo")
 SESS = {}
 LOGIN_FAIL = {}
 
@@ -151,8 +152,8 @@ class H(BaseHTTPRequestHandler):
         items = []
         for key in tabs:
             cls = ' style="font-weight:bold"' if key == active else ""
-            items.append('<a href="/?tab=%s&amp;lang=%s"%s>%s</a>' % (key, lang, cls, T(key, lang)))
-        return '<div style="margin-bottom:12px">%s | <a href="/?lang=en">EN</a> / <a href="/?lang=zh">中文</a> | <a href="/logout?lang=%s">%s</a></div>' % (" | ".join(items), lang, T("logout", lang))
+            items.append('<a href="/wuwupuo/?tab=%s&amp;lang=%s"%s>%s</a>' % (key, lang, cls, T(key, lang)))
+        return '<div style="margin-bottom:12px">%s | <a href="/wuwupuo/?lang=en">EN</a> / <a href="/wuwupuo/?lang=zh">中文</a> | <a href="/wuwupuo/logout?lang=%s">%s</a></div>' % (" | ".join(items), lang, T("logout", lang))
 
     def login_form(self, lang, err=""):
         return ('<meta charset="utf-8"><h2>SFM %s</h2><form method="post">%s <input name="user"><br><br>%s <input type="password" name="pass"><br><br><button>%s</button></form>%s' %
@@ -162,7 +163,7 @@ class H(BaseHTTPRequestHandler):
         return '<meta charset="utf-8"><h1>SFM %s</h1>%s%s' % (T("title", lang), self.nav(lang, active), body)
 
     def render_overview(self, lang, st):
-        rows = "".join('<tr><td>%s</td><td>%d/%d</td><td><a href="/?tab=social&amp;room=%s&amp;lang=%s">%s</a></td><td><form method="post" style="display:inline"><input type="hidden" name="cmd" value="delroom"><input type="hidden" name="room_id" value="%s"><input type="hidden" name="lang" value="%s"><button>%s</button></form></td></tr>' %
+        rows = "".join('<tr><td>%s</td><td>%d/%d</td><td><a href="/wuwupuo/?tab=social&amp;room=%s&amp;lang=%s">%s</a></td><td><form method="post" style="display:inline"><input type="hidden" name="cmd" value="delroom"><input type="hidden" name="room_id" value="%s"><input type="hidden" name="lang" value="%s"><button>%s</button></form></td></tr>' %
                        (esc(r["room_id"]), len(r["players"]), r["max"], urllib.parse.quote(r["room_id"]), lang, T("chat", lang), esc(r["room_id"]), lang, T("delete", lang)) for r in st["rooms"])
         create = ('<form method="post" style="margin-top:8px"><input type="hidden" name="cmd" value="create_room"><input type="hidden" name="lang" value="%s">%s <input name="room_id" placeholder="room_id"> %s <input name="max_players" value="8" size="3"> <button>%s</button></form>' %
                   (lang, T("room_id", lang), T("max_players", lang), T("create_room", lang)))
@@ -173,7 +174,7 @@ class H(BaseHTTPRequestHandler):
         blocks = []
         for r in st["rooms"]:
             players = ", ".join("%s(%s)" % (esc(p["name"]), p["uid"]) for p in r["players"])
-            blocks.append('<div style="border:1px solid #888;margin:6px 0;padding:6px"><b>%s</b> (%d/%d) &nbsp; <a href="/?tab=social&amp;room=%s&amp;lang=%s">%s</a> &nbsp; <form method="post" style="display:inline"><input type="hidden" name="cmd" value="delroom"><input type="hidden" name="room_id" value="%s"><input type="hidden" name="lang" value="%s"><button>%s</button></form><br>%s</div>' %
+            blocks.append('<div style="border:1px solid #888;margin:6px 0;padding:6px"><b>%s</b> (%d/%d) &nbsp; <a href="/wuwupuo/?tab=social&amp;room=%s&amp;lang=%s">%s</a> &nbsp; <form method="post" style="display:inline"><input type="hidden" name="cmd" value="delroom"><input type="hidden" name="room_id" value="%s"><input type="hidden" name="lang" value="%s"><button>%s</button></form><br>%s</div>' %
                           (esc(r["room_id"]), len(r["players"]), r["max"], urllib.parse.quote(r["room_id"]), lang, T("chat", lang), esc(r["room_id"]), lang, T("delete", lang), players))
         return '<h3>%s</h3>%s' % (T("rooms", lang), "".join(blocks) if blocks else "<p>%s</p>" % T("no_logs", lang))
 
@@ -199,7 +200,7 @@ class H(BaseHTTPRequestHandler):
         if room:
             r = next((x for x in st["rooms"] if x["room_id"] == room), None)
             msgs = "".join("<li>%s(%s): %s</li>" % (esc(m.get("name", "")), esc(str(m.get("uid", ""))), esc(m.get("text", ""))) for m in (r["chat"] if r else []))
-            return ('<h3>%s %s</h3><ul>%s</ul><p><a href="/?tab=social&amp;lang=%s">%s</a></p>' % (T("room_chat", lang), esc(room), msgs, lang, T("back", lang)))
+            return ('<h3>%s %s</h3><ul>%s</ul><p><a href="/wuwupuo/?tab=social&amp;lang=%s">%s</a></p>' % (T("room_chat", lang), esc(room), msgs, lang, T("back", lang)))
         pub = "".join('<li><b>%s</b>(%s): %s <span style="color:#888">[%s]</span></li>' % (esc(m.get("name", "")), esc(str(m.get("uid", ""))), esc(m.get("text", "")), m.get("ts", "")) for m in st.get("pubchat", []))
         roomopts = "".join('<option value="%s">%s</option>' % (esc(r["room_id"]), esc(r["room_id"])) for r in st["rooms"])
         send = ('<form method="post"><input type="hidden" name="cmd" value="broadcast"><input type="hidden" name="lang" value="%s">%s <select name="target"><option value="all">%s</option>%s</select><input name="text"><button>%s</button></form>' %
@@ -254,29 +255,36 @@ class H(BaseHTTPRequestHandler):
 
     def do_GET(self):
         q = urllib.parse.urlparse(self.path)
+        if not (q.path == BASE or q.path.startswith(BASE + "/")):
+            self.send_html("404 Not Found", 404)
+            return
+        path = q.path[len(BASE):] or "/"
         p = urllib.parse.parse_qs(q.query)
         lang = p.get("lang", ["zh"])[0]
         cfg = lc()
         if not ok_ip(self, cfg):
             self.send_html("Forbidden IP", 403)
             return
-        if q.path == "/logout":
+        if path == "/logout":
             self.send_response(302)
             self.send_header("Set-Cookie", "sid=; Path=/; HttpOnly; Max-Age=0")
-            self.send_header("Location", "/?lang=" + lang)
+            self.send_header("Location", BASE + "/?lang=" + lang)
             self.end_headers()
             return
         if not ok_sid(self):
             self.send_html(self.login_form(lang))
             return
-        if q.path.startswith("/room/"):
-            room = urllib.parse.unquote(q.path[len("/room/"):])
+        if path.startswith("/room/"):
+            room = urllib.parse.unquote(path[len("/room/"):])
             self.send_html(self.page(lang, "social", self.render_social(lang, ls(), room)))
             return
         tab = p.get("tab", ["overview"])[0]
         self.send_html(self.render_page(tab, lang, cfg))
 
     def do_POST(self):
+        if not self.path.startswith(BASE):
+            self.send_html("404 Not Found", 404)
+            return
         n = int(self.headers.get("Content-Length", "0"))
         raw = self.rfile.read(n).decode("utf-8")
         b = urllib.parse.parse_qs(raw)
@@ -291,7 +299,7 @@ class H(BaseHTTPRequestHandler):
                 SESS[s] = time.time() + 86400
                 self.send_response(302)
                 self.send_header("Set-Cookie", "sid=%s; Path=/; HttpOnly" % s)
-                self.send_header("Location", "/?tab=overview&lang=" + lang)
+                self.send_header("Location", BASE + "/?tab=overview&lang=" + lang)
                 self.end_headers()
                 return
             ipk = ip(self)
@@ -335,7 +343,7 @@ class H(BaseHTTPRequestHandler):
         elif cmd == "save_settings":
             self.save_settings(b, cfg)
         self.send_response(302)
-        self.send_header("Location", "/?tab=%s&lang=%s" % (b.get("tab", ["overview"])[0], lang))
+        self.send_header("Location", BASE + "/?tab=%s&lang=%s" % (b.get("tab", ["overview"])[0], lang))
         self.end_headers()
 
     def save_mods(self, b, cfg):

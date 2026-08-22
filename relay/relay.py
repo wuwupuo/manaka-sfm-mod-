@@ -638,7 +638,7 @@ def reporter():
         stamp = now()
         try:
             process_commands()
-            if stamp - last_maintenance >= 30:
+            if stamp - last_maintenance >= 5:
                 last_maintenance = stamp
                 reload_dynamic()
                 cleanup_chat_archive()

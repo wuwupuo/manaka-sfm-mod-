@@ -35,10 +35,12 @@
 
 ## 📦 下载（Release）
 
-- [SFMOnline_Relay_Windows_v1.0.2.zip](release/SFMOnline_Relay_Windows_v1.0.2.zip)：Windows 一键版（解压后双击 启动联机服.bat）
-- [SFMOnline_Relay_Linux_v1.0.2.zip](release/SFMOnline_Relay_Linux_v1.0.2.zip)：Linux 一键版（解压后 ./start.sh）
+- [SFMOnline_Relay_Windows_v1.0.3.zip](release/SFMOnline_Relay_Windows_v1.0.3.zip)：Windows 一键版（解压后双击 启动联机服.bat）
+- [SFMOnline_Relay_Linux_v1.0.3.zip](release/SFMOnline_Relay_Linux_v1.0.3.zip)：Linux 一键版（解压后 ./start.sh）
 - [SFMOnline_Client_v1.0.2.zip](release/SFMOnline_Client_v1.0.2.zip)：客户端整合包（解压后把 BepInEx 内容放入游戏目录，或直接下载 client/SFMOnline_1.0.2.dll 放入 BepInEx/plugins/）。
 
+> **v1.0.3 更新**：后台房间状态改为每 5 秒刷新（原来 30 秒），删除/创建房间后后台更快看到变化；同步 admin 面板。
+>
 > **v1.0.2 更新**：优化多房间同步性能（骨同步/动作同步加服务端限频，客户端运动/骨骼同步降频），解决多人同房同步卡顿、控制命令延迟/丢失导致被控角色动不了的问题。
 >
 > v1.0.1 修复：放宽联机服务器速率限制（RATE_LIMIT 600→4000），流量过大时仅丢弃+限频警告，不再直接断开玩家连接（解决玩家进房约10秒即被踢线的问题）。
