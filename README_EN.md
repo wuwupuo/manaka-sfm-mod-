@@ -48,6 +48,7 @@ For detailed instructions, please refer to [Client Usage Guide](client/Client-Us
 >  **Server v1.0.3 Update**: The room status in the backend is now refreshed every 5 seconds (previously 30 seconds), so changes are visible in the backend more quickly after deleting/creating a room; the admin panel is now synchronized.
 
 >  **Client v1.0.2 Update**: Optimized multi-room synchronization performance (bone synchronization/motion synchronization with server-side frequency limiting, client-side motion/bone synchronization frequency reduction), resolving issues such as lag during multi-player room synchronization and control command delays/losses that prevented controlled characters from moving.
+
 >  **Server v1.0.1 Fixes:** Relaxed the online server rate limit (RATE_LIMIT 600→4000). When the traffic is too high, only discarding and frequency limiting warnings are given, and the player connection will no longer be directly disconnected (solving the issue of players being kicked out about 10 seconds after entering the room).
 
 ---
