@@ -99,6 +99,7 @@ Please include: server name, server address (domain/IP:port), admin contact, ser
 - Telegram: [https://t.me/SFMMM11](https://t.me/SFMMM11)
 - Donation site: [https://zanzhu.wuwupuo.ccwu.cc/](https://zanzhu.wuwupuo.ccwu.cc/)
 - GitHub: [https://github.com/wuwupuo/manaka-sfm-mod-](https://github.com/wuwupuo/manaka-sfm-mod-)
+- email：**3197377739@qq.com**
 
 ---
 ## 🎁 Sponsorship
@@ -116,5 +117,6 @@ https://zanzhu.wuwupuo.cc.cd
 
 MIT License. See [LICENSE](LICENSE).
 
-## 我们的另一个项目
-sfmmm创意工坊https://github.com/b9348/sfmmm
+## Our other project
+sfmmm Creative Workshop
+https://github.com/b9348/sfmmm
