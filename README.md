@@ -118,3 +118,6 @@ https://zanzhu.wuwupuo.cc.cd
 ## 📄 开源协议
 
 MIT License，详见 [LICENSE](LICENSE)。
+
+我们的另一个项目
+sfmmm创意工坊https://github.com/b9348/sfmmm
