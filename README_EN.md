@@ -1,3 +1,10 @@
+Please note that due to too many unnecessary countries attacking my servers, I will be restricting access from most country IPs. The countries my server currently supports are: 
+
+mainland China, Taiwan, Macau, Hong Kong, USA, Japan, Russia, UK.
+
+If your country isn't listed above, please submit a ticket. If you still find that your IP can't access the server, please send your IP address via email and I'll add your IP to the whitelist
+
+
 # SFM Online
 
 > 🌐 English | [中文](README.md)
