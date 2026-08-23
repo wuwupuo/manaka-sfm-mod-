@@ -33,7 +33,7 @@ This project is purely engineering: it adds online play (rooms, chat, state/anim
 ## 🚀 Client Usage
 
 1. Install the required BepInEx environment (the game itself).
-2. Download the compiled client from [client/SFMOnline_1.0.0.dll](client/SFMOnline_1.0.0.dll) (the client is **closed-source**), rename it to `SFMOnline.dll` and put it into `BepInEx/plugins/`.
+2. Download the compiled client from [client/SFMOnline_1.0.2.dll](client/SFMOnline_1.0.2.dll) (the client is **closed-source**), rename it to `SFMOnline.dll` and put it into `BepInEx/plugins/`.
 3. Launch the game: `F10` online menu, `F12` general menu, `F11` chat.
 4. After login: `F10` → Server List → pick a relay; then create/join a room; or use LAN/tunnel rooms.
 5. Press `Alt+F3` anytime to force-reset all control states.
@@ -44,9 +44,9 @@ See [Client Usage Guide](client/Client-Usage-EN.md) (Chinese) for details.
 
 ## 📦 Downloads (Release)
 
-- [SFMOnline_Relay_Windows_v1.0.0.zip](release/SFMOnline_Relay_Windows_v1.0.0.zip): Windows one-click (unzip, run 启动联机服.bat)
-- [SFMOnline_Relay_Linux_v1.0.0.zip](release/SFMOnline_Relay_Linux_v1.0.0.zip): Linux one-click (unzip, run ./start.sh)
-- Client: just download SFMOnline_1.0.0.dll into BepInEx/plugins/ (closed-source, no compilation needed).
+- [SFMOnline_Relay_Windows_v1.0.3.zip](release/SFMOnline_Relay_Windows_v1.0.3.zip): Windows one-click (unzip, run 启动联机服.bat)
+- [SFMOnline_Relay_Linux_v1.0.3.zip](release/SFMOnline_Relay_Linux_v1.0.3.zip): Linux one-click (unzip, run ./start.sh)
+- Client: just download SFMOnline_1.0.2.dll into BepInEx/plugins/ (closed-source, no compilation needed).
 
 ---
 
