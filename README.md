@@ -101,7 +101,7 @@ Windows 直接双击 `启动联机服.bat`。
 - QQ 交流群：**1095532943**
 - Telegram：[https://t.me/SFMMM11](https://t.me/SFMMM11)
 - GitHub：[https://github.com/wuwupuo/manaka-sfm-mod-](https://github.com/wuwupuo/manaka-sfm-mod-)
-- email 3197377739@qq.com
+- email：**3197377739@qq.com**
 
 ---
 
