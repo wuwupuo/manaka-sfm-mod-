@@ -30,7 +30,7 @@ This project focuses solely on the engineering layer: connecting single-player g
 ## 🚀 Client Usage Tutorial
 
 1. Install the BepInEx environment (game itself) required by the integration package.
-2. For **closed-source** clients: Download the compiled DLL from this repository [client/SFMOnline_1.0.5.dll](client/SFMOnline_1.0.5.dll), rename it to `SFMOnline.dll`, and place it in `BepInEx/plugins/`.
+2. For **closed-source** clients: Download the compiled DLL from this repository [client/SFMOnline_1.0.6.dll](client/SFMOnline_1.0.6.dll), rename it to `SFMOnline.dll`, and place it in `BepInEx/plugins/`.
 3. Start the game: `F10` online menu, `F12` normal menu, `F11` chat.
 4. After logging in: Press `F10` → Select a server from the main server list → Create/join a room on the room page; or create a room via LAN/internal network penetration.
 5. Press `Alt+F3` in-game to force a complete restoration of all control states at any time.
@@ -43,8 +43,10 @@ For detailed instructions, please refer to [Client Usage Guide](client/Client-Us
 
 - [SFMOnline_Relay_Windows_v1.0.3.zip](release/SFMOnline_Relay_Windows_v1.0.3.zip): Windows One-Click Version (Double-click to start the online server after extraction.bat)
 - [SFMOnline_Relay_Linux_v1.0.3.zip](release/SFMOnline_Relay_Linux_v1.0.3.zip): One-click Linux version (after decompression, run ./start.sh)
-- [SFMOnline_Client_v1.0.5.zip](release/SFMOnline_Client_v1.0.5.zip): Client integration package (after decompression, put the contents of BepInEx into the game directory, or directly download client/SFMOnline_1.0.5.dll and put it into BepInEx/plugins/).
+- [SFMOnline_Client_v1.0.6.zip](release/SFMOnline_Client_v1.0.6.zip): Client integration package (after decompression, put the contents of BepInEx into the game directory, or directly download client/SFMOnline_1.0.6.dll and put it into BepInEx/plugins/).
 - 
+> **Client v1.0.6 Update**: Fixed the issue of remote players' hair/ribbons (slim elongated renderers) disappearing. Adjusted the ghost renderer filter logic so it no longer wrongly hides slim renderers.
+> 
 > **Client v1.0.5 Update**: Fixed F10 not opening the online menu (key detection moved to the game main loop, no longer relying on GUI events). Added cross-navigation guide buttons at the top of the online menu and main menu ([Main Menu F12] / [Online Menu F10]).
 > 
 > **Client v1.0.4 Update**: Fixed the registration UI layout (password/hint text no longer covers input fields; hint text wraps automatically without overflowing the screen). The map now displays obstacles at their real size and shows wall boundaries (different obstacles/walls have different sizes, no longer uniform).
@@ -146,7 +148,7 @@ sfmmm Creative Workshop: https://github.com/b9348/sfmmm
 ## 🚀 Client Usage
 
 1. Install the required BepInEx environment (the game itself).
-2. Download the compiled client from [client/SFMOnline_1.0.5.dll](client/SFMOnline_1.0.5.dll) (the client is **closed-source**), rename it to `SFMOnline.dll` and put it into `BepInEx/plugins/`.
+2. Download the compiled client from [client/SFMOnline_1.0.6.dll](client/SFMOnline_1.0.6.dll) (the client is **closed-source**), rename it to `SFMOnline.dll` and put it into `BepInEx/plugins/`.
 3. Launch the game: `F10` online menu, `F12` general menu, `F11` chat.
 4. After login: `F10` → Server List → pick a relay; then create/join a room; or use LAN/tunnel rooms.
 5. Press `Alt+F3` anytime to force-reset all control states.

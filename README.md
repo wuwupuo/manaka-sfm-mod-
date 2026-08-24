@@ -30,7 +30,7 @@
 ## 🚀 客户端使用教程
 
 1. 安装整合包要求的 BepInEx 环境（游戏本体）。
-2. 客户端为**闭源**：从本仓库 [client/SFMOnline_1.0.5.dll](client/SFMOnline_1.0.5.dll) 下载编译好的 DLL，重命名为 `SFMOnline.dll` 放到 `BepInEx/plugins/`。
+2. 客户端为**闭源**：从本仓库 [client/SFMOnline_1.0.6.dll](client/SFMOnline_1.0.6.dll) 下载编译好的 DLL，重命名为 `SFMOnline.dll` 放到 `BepInEx/plugins/`。
 3. 启动游戏：`F10` 联机菜单、`F12` 普通菜单、`F11` 聊天。
 4. 登录后：`F10` → 总服务器列表选择服务器 → 房间页创建/加入房间；或局域网/内网穿透房间。
 5. 游戏内按 `Alt+F3` 随时强制恢复所有控制状态。
@@ -43,8 +43,10 @@
 
 - [SFMOnline_Relay_Windows_v1.0.3.zip](release/SFMOnline_Relay_Windows_v1.0.3.zip)：Windows 一键版（解压后双击 启动联机服.bat）
 - [SFMOnline_Relay_Linux_v1.0.3.zip](release/SFMOnline_Relay_Linux_v1.0.3.zip)：Linux 一键版（解压后 ./start.sh）
-- [SFMOnline_Client_v1.0.5.zip](release/SFMOnline_Client_v1.0.5.zip)：客户端整合包（解压后把 BepInEx 内容放入游戏目录，或直接下载 client/SFMOnline_1.0.5.dll 放入 BepInEx/plugins/）。
+- [SFMOnline_Client_v1.0.6.zip](release/SFMOnline_Client_v1.0.6.zip)：客户端整合包（解压后把 BepInEx 内容放入游戏目录，或直接下载 client/SFMOnline_1.0.6.dll 放入 BepInEx/plugins/）。
 
+> **客户端v1.0.6 更新**：修复联机时看对方角色头发/飘带等细长物件消失的问题（调整了分身渲染器过滤逻辑，不再误屏蔽细长渲染器）。
+>
 > **客户端v1.0.5 更新**：修复 F10 无法打开联机菜单的问题（改为在游戏主循环中检测按键，不再依赖 GUI 事件）；联机菜单与主菜单顶部新增互相跳转的引导按钮（【主菜单 F12】/【联机菜单 F10】）。
 >
 > **客户端v1.0.4 更新**：修复注册界面布局（密码/提示文字不再遮挡输入框，提示文字自动换行不超出界面）；地图障碍物按真实大小显示，并显示墙壁边界（不同障碍物/墙壁尺寸不同，不再统一大小）。
