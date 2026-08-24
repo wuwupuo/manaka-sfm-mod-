@@ -202,7 +202,7 @@ Please include: server name, server address (domain/IP:port), admin contact, ser
 
 ## 📞 Contact
 
-- QQ Group: **1095532943**
+- QQ Group: **1095532943 129733687**
 - Telegram: [https://t.me/SFMMM11](https://t.me/SFMMM11)
 - Donation site: [https://zanzhu.wuwupuo.ccwu.cc/](https://zanzhu.wuwupuo.ccwu.cc/)
 - GitHub: [https://github.com/wuwupuo/manaka-sfm-mod-](https://github.com/wuwupuo/manaka-sfm-mod-)
