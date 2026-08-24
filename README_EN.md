@@ -1,5 +1,5 @@
 Please note that due to numerous unnecessary attacks on my server from various countries, I will be restricting IP addresses from most countries. My server currently supports the following countries:
-Mainland China, Taiwan, Macau, Hong Kong, the United States, Japan, Russia, and the United Kingdom
+Mainland China, Taiwan, Macau, Hong Kong, the United States, Japan, Russia, and the United KingdomSouth Korea
 If your country is not among the countries listed above, please submit lssues. If you still cannot access the site using your IP address, please send your IP address to the email address provided, and I will add your IP address to the whitelist.
 
 
