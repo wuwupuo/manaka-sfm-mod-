@@ -1,0 +1,20 @@
+# 构建产物
+bin/
+obj/
+
+# IDE
+.vs/
+*.user
+*.suo
+
+# 运行时文件
+*.log
+SFMOnline_client.log
+
+# 本地凭据（运行时生成）
+*.cred
+*.cred.bak
+
+# Windows
+Thumbs.db
+Desktop.ini
