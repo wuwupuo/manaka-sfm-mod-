@@ -30,10 +30,19 @@ This project focuses solely on the engineering layer: connecting single-player g
 ## 🚀 Client Usage Tutorial
 
 1. Install the BepInEx environment (game itself) required by the integration package.
-2. For **closed-source** clients: Download the compiled DLL from this repository [client/SFMOnline_1.0.6.dll](client/SFMOnline_1.0.6.dll), rename it to `SFMOnline.dll`, and place it in `BepInEx/plugins/`.
+2. The client is **open source**: source code at [SFMOnline.Client/](SFMOnline.Client/) (encryption removed, directly compilable). If you prefer prebuilt, download the compiled DLL from this repository [client/SFMOnline_1.0.8.dll](client/SFMOnline_1.0.8.dll), rename it to `SFMOnline.dll`, and place it in `BepInEx/plugins/`.
 3. Start the game: `F10` online menu, `F12` normal menu, `F11` chat.
 4. After logging in: Press `F10` → Select a server from the main server list → Create/join a room on the room page; or create a room via LAN/internal network penetration.
 5. Press `Alt+F3` in-game to force a complete restoration of all control states at any time.
+
+### 🧩 Mod Development (New)
+
+The client ships with the **SFMOnline.Ext framework (314+ APIs)**. Anyone can build multiplayer gameplay mods:
+
+- Full documentation: [docs/](docs/) (client mod guide, complete API reference, server plugin guide, design patterns, gameplay idea library, example walkthrough)
+- Compilable examples: [examples/](examples/) (quiz game [client + server plugin] / hide & seek / quest story)
+- Server plugin template: [server-plugin/](server-plugin/)
+- **The relay server itself stays closed-source**, but the plugin interface (`plugins/*.py`) is open for community development and works together with client mods.
 
 For detailed instructions, please refer to [Client Usage Guide](client/Client-Usage-EN.md) / [Client Usage Guide](client/Client-Usage-EN.md).
 
@@ -43,8 +52,10 @@ For detailed instructions, please refer to [Client Usage Guide](client/Client-Us
 
 - [SFMOnline_Relay_Windows_v1.0.3.zip](release/SFMOnline_Relay_Windows_v1.0.3.zip): Windows One-Click Version (Double-click to start the online server after extraction.bat)
 - [SFMOnline_Relay_Linux_v1.0.3.zip](release/SFMOnline_Relay_Linux_v1.0.3.zip): One-click Linux version (after decompression, run ./start.sh)
-- [SFMOnline_Client_v1.0.6.zip](release/SFMOnline_Client_v1.0.6.zip): Client integration package (after decompression, put the contents of BepInEx into the game directory, or directly download client/SFMOnline_1.0.6.dll and put it into BepInEx/plugins/).
-- 
+- [SFMOnline_Client_v1.0.8.zip](release/SFMOnline_Client_v1.0.8.zip): Client integration package (after decompression, put the contents of BepInEx into the game directory, or directly download client/SFMOnline_1.0.8.dll and put it into BepInEx/plugins/).
+
+> **Client v1.0.8 Update**: Client source code is now **open source** (string encryption removed). Added **27 new `remote.*` gameplay control functions** (action/vibrate/thrust/goods/undress/orgasm/pee/crouch/crawl/sit/handcuff/collar/blindfold/fx/teleport — target a specific player or broadcast to all). Added player queries (net.get_player_name / net.find_uid / net.get_players_info). Framework now exposes **314 functions** for mod development (see docs/).
+>
 > **Client v1.0.6 Update**: Fixed the issue of remote players' hair/ribbons (slim elongated renderers) disappearing. Adjusted the ghost renderer filter logic so it no longer wrongly hides slim renderers.
 > 
 > **Client v1.0.5 Update**: Fixed F10 not opening the online menu (key detection moved to the game main loop, no longer relying on GUI events). Added cross-navigation guide buttons at the top of the online menu and main menu ([Main Menu F12] / [Online Menu F10]).
