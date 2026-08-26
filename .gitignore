@@ -1,20 +1,25 @@
-# 构建产物
-bin/
-obj/
-
-# IDE
-.vs/
-*.user
-*.suo
-
-# 运行时文件
-*.log
-SFMOnline_client.log
-
-# 本地凭据（运行时生成）
-*.cred
-*.cred.bak
-
-# Windows
-Thumbs.db
-Desktop.ini
+### AL ###
+#Template for AL projects for Dynamics 365 Business Central
+#launch.json folder
+.vscode/
+#Cache folder
+.alcache/
+#Symbols folder
+.alpackages/
+#Snapshots folder
+.snapshots/
+#Testing Output folder
+.output/
+#Extension App-file
+*.app
+#Rapid Application Development File
+rad.json
+#Translation Base-file
+*.g.xlf
+#License-files
+*.bclicense
+*.flf
+#Test results file
+TestResults.xml
+2/
+2.zip

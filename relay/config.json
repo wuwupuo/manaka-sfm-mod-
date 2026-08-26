@@ -1,0 +1,16 @@
+{
+  "host": "0.0.0.0",
+  "port": 7000,
+  "domain": "your-server.com",
+  "master_report": "https://wuwupuo1.xtxt.xyz/public_html/sfm_api/relay_report.php",
+  "secret": "CHANGE_ME_TO_A_LONG_RANDOM_SECRET",
+  "max_online": 100,
+  "max_rooms": 50,
+  "room_max_players": 8,
+  "room_timeout": 120,
+  "lan_only": false,
+  "admin": {
+    "user": "admin",
+    "password": "CHANGE_ME"
+  }
+}
