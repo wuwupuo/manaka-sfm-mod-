@@ -30,10 +30,19 @@
 ## 🚀 客户端使用教程
 
 1. 安装整合包要求的 BepInEx 环境（游戏本体）。
-2. 客户端为**闭源**：从本仓库 [client/SFMOnline_1.0.6.dll](client/SFMOnline_1.0.6.dll) 下载编译好的 DLL，重命名为 `SFMOnline.dll` 放到 `BepInEx/plugins/`。
+2. 客户端**已开源**：源码见 [SFMOnline.Client/](SFMOnline.Client/)（取消加密，可直接编译）；不想自己编译可从 [client/SFMOnline_1.0.6.dll](client/SFMOnline_1.0.6.dll) 下载编译好的 DLL，重命名为 `SFMOnline.dll` 放到 `BepInEx/plugins/`。
 3. 启动游戏：`F10` 联机菜单、`F12` 普通菜单、`F11` 聊天。
 4. 登录后：`F10` → 总服务器列表选择服务器 → 房间页创建/加入房间；或局域网/内网穿透房间。
 5. 游戏内按 `Alt+F3` 随时强制恢复所有控制状态。
+
+### 🧩 模组开发（新）
+
+客户端内置 **SFMOnline.Ext 前置框架（314+ API）**，任何人都可以开发联机玩法模组：
+
+- 完整开发文档：[docs/](docs/)（客户端模组开发指南、API 完整参考、服务器插件开发指南、玩法设计模式、玩法创意库、示例模组详解）
+- 可编译示例：[examples/](examples/)（答题游戏[客户端+服务器插件] / 捉迷藏 / 任务剧情）
+- 服务器插件模板：[server-plugin/](server-plugin/)
+- **服务器本体闭源**，但插件接口（`plugins/*.py`）对社区开放，可与客户端模组联动
 
 详细说明见 [客户端使用教程](client/客户端使用教程.md) / [Client Usage Guide](client/Client-Usage-EN.md)。
 
