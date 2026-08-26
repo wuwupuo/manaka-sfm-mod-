@@ -52,8 +52,10 @@
 
 - [SFMOnline_Relay_Windows_v1.0.3.zip](release/SFMOnline_Relay_Windows_v1.0.3.zip)：Windows 一键版（解压后双击 启动联机服.bat）
 - [SFMOnline_Relay_Linux_v1.0.3.zip](release/SFMOnline_Relay_Linux_v1.0.3.zip)：Linux 一键版（解压后 ./start.sh）
-- [SFMOnline_Client_v1.0.6.zip](release/SFMOnline_Client_v1.0.6.zip)：客户端整合包（解压后把 BepInEx 内容放入游戏目录，或直接下载 client/SFMOnline_1.0.6.dll 放入 BepInEx/plugins/）。
+- [SFMOnline_Client_v1.0.8.zip](release/SFMOnline_Client_v1.0.8.zip)：客户端整合包（解压后把 BepInEx 内容放入游戏目录，或直接下载 client/SFMOnline_1.0.8.dll 放入 BepInEx/plugins/）。
 
+> **客户端v1.0.8 更新**：客户端源码开源（取消字符串加密）；新增 `remote.*` 远程玩法控制 27 个函数（动作/振动/抽插/道具/脱衣/高潮/排尿/蹲爬坐/手铐/项圈/蒙眼/特效/传送，支持指定玩家与全员广播）；新增玩家查询（get_player_name/find_uid/get_players_info）；前置框架共 314 个函数，开放模组开发（见 docs/）。
+>
 > **客户端v1.0.6 更新**：修复联机时看对方角色头发/飘带等细长物件消失的问题（调整了分身渲染器过滤逻辑，不再误屏蔽细长渲染器）。
 >
 > **客户端v1.0.5 更新**：修复 F10 无法打开联机菜单的问题（改为在游戏主循环中检测按键，不再依赖 GUI 事件）；联机菜单与主菜单顶部新增互相跳转的引导按钮（【主菜单 F12】/【联机菜单 F10】）。
