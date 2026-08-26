@@ -43,6 +43,7 @@ MAX_ONLINE = int(CFG.get("max_online", 100))
 MAX_ROOMS = int(CFG.get("max_rooms", 50))
 ROOM_MAX = int(CFG.get("room_max_players", 8))
 HARD_ROOM_MAX = 10
+EXT_RATE_LIMIT = int(CFG.get("ext_rate_limit", 200))  # 每 10 秒最多 200 条 mod 通信消息
 STATE_TARGET_BPS = 200 * 1024
 STATE_BURST_BPS = 1024 * 1024
 ROOM_TIMEOUT = int(CFG.get("room_timeout", 120))
@@ -865,6 +866,25 @@ class Handler(socketserver.BaseRequestHandler):
                 broadcast_room(rid, {"t": "appearance_request", "uid": self.uid}, self.uid)
         elif t == "room_setting":
             self.do_room_setting(m)
+        elif t == "ext" or (t and t.startswith("ext_")):
+            # 通用 mod 同步通道（内建支持，无需插件）：
+            #   ext_evt/ext_score/ext_sync/ext_bone/ext_trigger/ext_npc/ext_team/
+            #   ext_announce/ext_countdown/ext_gift/ext_spectate/ext_achievement/
+            #   ext_vote/ext_task/ext_room/ext ...
+            # 带 "to" 字段 → 定向发送；否则房间广播（附 uid 供接收端识别来源）
+            # t=="ext" 且 ns 匹配插件 → 优先走插件路由
+            handled = False
+            if t == "ext":
+                ns = str(m.get("ns", "")).strip()
+                if ns in PLUGINS:
+                    try:
+                        dispatch_ext(clients.get(self.uid, {}), m)
+                        handled = True
+                    except Exception as ex:
+                        send(self.request, {"t": "err", "m": f"插件处理异常: {ex}"})
+                        handled = True
+            if not handled:
+                self.do_ext_forward(m)
         elif t.startswith("game_"):
             send(self.request, {"t": "err", "m": "该玩法已移除"})
         elif t in ("chat", "sync", "action"):
@@ -960,7 +980,7 @@ class Handler(socketserver.BaseRequestHandler):
         self.uid = uid
         self.name = name
         self.key = key
-        send_plain(self.request, {"t": "ok", "online": len(clients), "max_online": MAX_ONLINE, "server_name": server_name, "server_desc": server_desc, "announcement": announcement, "pubchat": pubchat[-50:], "mods": mods, "key": base64.b64encode(key).decode()})
+        send_plain(self.request, {"t": "ok", "online": len(clients), "max_online": MAX_ONLINE, "server_name": server_name, "server_desc": server_desc, "announcement": announcement, "pubchat": pubchat[-50:], "mods": plugin_list(), "key": base64.b64encode(key).decode()})
         broadcast_all({"t": "presence", "uid": uid, "name": name, "online": len(clients)}, uid)
 
     def do_pub_chat(self, m):
@@ -981,6 +1001,15 @@ class Handler(socketserver.BaseRequestHandler):
             text = masked
             log_event("chat_masked", "uid=%s hits=%s" % (self.uid, ",".join(hits)))
         msg = {"t": "pub_chat", "uid": self.uid, "name": self.name, "text": text, "ts": now()}
+        # 插件钩子：!命令 走 on_command，普通消息走 on_chat
+        if text.startswith("!"):
+            parts = text[1:].split(None, 1)
+            cmd = parts[0].lower()
+            args = parts[1] if len(parts) > 1 else ""
+            plugin_handle_command(clients.get(self.uid, {}), cmd, args)
+        else:
+            if plugin_handle_chat(clients.get(self.uid, {}), text):
+                return  # 插件消费了消息，不广播
         with lock:
             pubchat.append(msg)
             del pubchat[:-100]
@@ -1015,6 +1044,10 @@ class Handler(socketserver.BaseRequestHandler):
                 rooms[rid]["players"][self.uid] = clients[self.uid]["name"]
         send(self.request, {"t": "room_created", "room_id": rid, "max": mx, "has_password": 1 if pwd else 0, "host": self.uid, "players": [{"uid": self.uid, "name": self.name}], "allow_game_bonuses": 0})
         broadcast_all({"t": "room_list", "rooms": room_summary()}, self.uid)
+        try:
+            plugin_call_all("on_room_create", clients.get(self.uid, {}), rooms.get(rid, {}))
+        except Exception:
+            pass
 
     def do_room_join(self, m):
         rid = str(m.get("room_id", ""))
@@ -1036,6 +1069,10 @@ class Handler(socketserver.BaseRequestHandler):
         send(self.request, {"t": "room_joined", "room_id": rid, "host": r.get("host", ""), "players": players, "allow_game_bonuses": r.get("allow_game_bonuses", 0)})
         broadcast_room(rid, {"t": "room_player_join", "uid": self.uid, "name": self.name, "players": players}, self.uid)
         broadcast_all({"t": "room_list", "rooms": room_summary()}, self.uid)
+        try:
+            plugin_call_all("on_join", clients.get(self.uid, {}))
+        except Exception:
+            pass
 
     def do_room_kick(self, m):
         rid = clients.get(self.uid, {}).get("room", "")
@@ -1090,6 +1127,36 @@ class Handler(socketserver.BaseRequestHandler):
             if len(json.dumps(data, ensure_ascii=False, separators=(",", ":")).encode("utf-8")) > MAX_SYNC_BYTES:
                 return
             broadcast_room(rid, {"t": t, "uid": self.uid, "name": self.name, "d": data}, self.uid)
+        try:
+            plugin_call_all("on_room_msg", clients.get(self.uid, {}), t, m)
+        except Exception:
+            pass
+
+    def do_ext_forward(self, m):
+        """通用 mod 同步通道转发（内建支持，无需插件）。
+
+        规则：
+          - 带 "to" 字段 → 定向发给目标玩家（同房间）
+          - 否则 → 广播给房间内其他玩家
+          - 未进房间 → 仅回执错误
+          - 限频：每客户端 10 秒内最多 EXT_RATE_LIMIT 条
+        """
+        rid = clients.get(self.uid, {}).get("room", "")
+        if not self.allow_rate("ext", EXT_RATE_LIMIT, 10.0):
+            return  # 超频静默丢弃，避免拖垮服务器
+        if not rid:
+            send(self.request, {"t": "err", "m": "mod 通信需要先加入房间"})
+            return
+        to = str(m.get("to", "")).strip()
+        payload = dict(m)
+        payload["uid"] = self.uid
+        payload["name"] = self.name
+        if to:
+            tc = clients.get(to)
+            if tc and tc.get("room") == rid:
+                send(tc["sock"], payload)
+            return
+        broadcast_room(rid, payload, self.uid)
 
     def do_pos(self, m):
         rid = clients.get(self.uid, {}).get("room", "")
@@ -1261,6 +1328,10 @@ class Handler(socketserver.BaseRequestHandler):
             if r.get("host") == self.uid:
                 archive_room_chat(rid, r)
                 rooms.pop(rid, None)
+                try:
+                    plugin_call_all("on_room_destroy", rid, r)
+                except Exception:
+                    pass
                 for u, cc in list(clients.items()):
                     if cc.get("room") == rid:
                         cc["room"] = ""
@@ -1278,6 +1349,10 @@ class Handler(socketserver.BaseRequestHandler):
                     send(tc["sock"], {"t": "toy_revoked", "controller": self.uid, "target": tgt})
             broadcast_room(c["room"], {"t": "room_leave", "uid": self.uid, "name": c.get("name", "")}, self.uid)
             broadcast_all({"t": "room_list", "rooms": room_summary()}, self.uid)
+            try:
+                plugin_call_all("on_leave", c)
+            except Exception:
+                pass
             c["room"] = ""
 
     def bye(self):
@@ -1294,6 +1369,294 @@ class Handler(socketserver.BaseRequestHandler):
 class ThreadingTCPServer(socketserver.ThreadingTCPServer):
     allow_reuse_address = True
     daemon_threads = True
+
+# ========== SFM Online 插件系统 ==========
+import importlib.util as _importlib_util
+
+PLUGIN_DIR = os.path.join(os.path.dirname(os.path.abspath(__file__)), "plugins")
+PLUGIN_DATA_DIR = os.path.join(os.path.dirname(os.path.abspath(__file__)), "plugin_data")
+PLUGINS = {}
+_PLUGIN_TICKERS = {}      # name -> 下一个 tick 时间
+_PLUGIN_DATA = {}         # 插件数据缓存
+_PLUGIN_DATA_FILE = os.path.join(PLUGIN_DIR, "..", "plugin_data.json")
+_PLUGIN_DATA_FILE = os.path.abspath(_PLUGIN_DATA_FILE)
+PLUGIN_TICK_INTERVAL = 5.0
+
+# ---------- 插件数据 API（持久化到 plugin_data.json） ----------
+def plugin_data_get(name, key, default=None):
+    _load_plugin_data()
+    d = _PLUGIN_DATA.get(name, {})
+    if isinstance(d, dict):
+        return d.get(key, default)
+    return default
+
+def plugin_data_set(name, key, value):
+    _load_plugin_data()
+    if name not in _PLUGIN_DATA or not isinstance(_PLUGIN_DATA.get(name), dict):
+        _PLUGIN_DATA[name] = {}
+    _PLUGIN_DATA[name][key] = value
+    _save_plugin_data()
+
+def _load_plugin_data():
+    if _PLUGIN_DATA:
+        return
+    try:
+        if os.path.exists(_PLUGIN_DATA_FILE):
+            with open(_PLUGIN_DATA_FILE, "r", encoding="utf-8") as f:
+                _PLUGIN_DATA.update(json.load(f))
+    except Exception as e:
+        print(f"[plugin] 数据加载失败: {e}", flush=True)
+
+def _save_plugin_data():
+    try:
+        with open(_PLUGIN_DATA_FILE, "w", encoding="utf-8") as f:
+            json.dump(_PLUGIN_DATA, f, ensure_ascii=False, indent=2)
+    except Exception as e:
+        print(f"[plugin] 数据保存失败: {e}", flush=True)
+
+# ---------- 插件 API：注入到每个插件模块 ----------
+def _make_plugin_api(name):
+    """给插件模块注入可用的 API 函数。"""
+    api = {
+        "name": name,
+        # 发送
+        "send": send,                          # send(sock, obj)
+        "send_plain": send_plain,
+        "broadcast_room": broadcast_room,      # broadcast_room(rid, obj, ex=None)
+        "broadcast_all": broadcast_all,
+        "send_to_uid": lambda uid, obj: _send_to_uid(uid, obj),
+        "send_to_room": lambda rid, obj, ex=None: broadcast_room(rid, obj, ex),
+        # 查询
+        "clients": lambda: clients,
+        "rooms": lambda: rooms,
+        "now": now,
+        "get_client": lambda uid: clients.get(str(uid)),
+        "get_room": lambda rid: rooms.get(str(rid)),
+        "client_room": lambda c: c.get("room", "") if c else "",
+        "room_players": lambda rid: list(rooms.get(rid, {}).get("players", {}).keys()),
+        # 数据
+        "data_get": lambda key, default=None: plugin_data_get(name, key, default),
+        "data_set": lambda key, value: plugin_data_set(name, key, value),
+        # 插件间通信
+        "send_to_plugin": lambda target, op, data=None: plugin_send_to(name, target, op, data),
+        "broadcast_event": lambda evt, data=None, exclude=None: plugin_broadcast_event(evt, data, exclude),
+        "list_plugins": lambda: list(PLUGINS.keys()),
+        # 日志
+        "log": lambda *a: print(f"[plugin:{name}]", *a, flush=True),
+        "log_event": log_event,
+    }
+    return api
+
+def _send_to_uid(uid, obj):
+    c = clients.get(str(uid))
+    if c and c.get("sock") is not None:
+        send(c["sock"], obj)
+        return True
+    return False
+
+# ---------- 插件生命周期 ----------
+def load_plugins():
+    """加载 plugins/ 目录下的所有 .py 插件。"""
+    PLUGINS.clear()
+    _PLUGIN_TICKERS.clear()
+    if not os.path.isdir(PLUGIN_DIR):
+        return 0, []
+    errs = []
+    ok = 0
+    for fn in sorted(os.listdir(PLUGIN_DIR)):
+        if not fn.endswith(".py"):
+            continue
+        path = os.path.join(PLUGIN_DIR, fn)
+        name = fn[:-3]
+        r = load_one_plugin(name, path)
+        if r is True:
+            ok += 1
+        else:
+            errs.append(r)
+    return ok, errs
+
+def load_one_plugin(name, path):
+    """加载单个插件。成功返回 True，失败返回错误串。"""
+    try:
+        spec = _importlib_util.spec_from_file_location("sfm_plugin_" + name, path)
+        mod = _importlib_util.module_from_spec(spec)
+        sys.modules[spec.name] = mod
+        # 注入插件 API
+        for k, v in _make_plugin_api(name).items():
+            setattr(mod, k, v)
+        spec.loader.exec_module(mod)
+        PLUGINS[name] = mod
+        _PLUGIN_TICKERS[name] = now()
+        print(f"[plugin] 已加载: {name} v{getattr(mod, 'VERSION', '?')} - {getattr(mod, 'DESC', '')}", flush=True)
+        return True
+    except Exception as e:
+        print(f"[plugin] 加载失败 {name}: {e}", flush=True)
+        return f"{name}: {e}"
+
+def reload_plugin(name):
+    """热重载单个插件。"""
+    path = os.path.join(PLUGIN_DIR, name + ".py")
+    if not os.path.exists(path):
+        return f"插件 {name} 不存在"
+    old = PLUGINS.pop(name, None)
+    if old is not None and hasattr(old, "on_unload"):
+        try:
+            old.on_unload()
+        except Exception:
+            pass
+    r = load_one_plugin(name, path)
+    return "OK" if r is True else f"失败: {r}"
+
+def unload_plugin(name):
+    """卸载插件。"""
+    mod = PLUGINS.pop(name, None)
+    _PLUGIN_TICKERS.pop(name, None)
+    if mod is not None and hasattr(mod, "on_unload"):
+        try:
+            mod.on_unload()
+        except Exception:
+            pass
+    return True if mod is not None else False
+
+def plugin_call(name, method, *args):
+    mod = PLUGINS.get(name)
+    if mod is None:
+        return
+    fn = getattr(mod, method, None)
+    if fn is None:
+        return
+    try:
+        fn(*args)
+    except Exception as e:
+        print(f"[plugin] {name}.{method} 异常: {e}", flush=True)
+
+def plugin_call_all(method, *args):
+    for name in list(PLUGINS.keys()):
+        plugin_call(name, method, *args)
+
+def plugin_tick():
+    """周期性调用插件 on_tick（每 5 秒）。"""
+    t = now()
+    for name in list(PLUGINS.keys()):
+        if t - _PLUGIN_TICKERS.get(name, 0) >= PLUGIN_TICK_INTERVAL:
+            _PLUGIN_TICKERS[name] = t
+            plugin_call(name, "on_tick")
+
+def dispatch_ext(client, m):
+    """把 t=='ext' 消息路由给对应命名空间的插件。
+    支持插件间通信：
+      - m["to_ns"] 指定目标插件（跨插件定向消息，from_ns 注入）
+      - m["evt"]    广播事件给所有订阅 on_event 的插件
+    """
+    ns = str(m.get("ns", "")).strip()
+    to_ns = str(m.get("to_ns", "")).strip()
+    # 插件间定向通信：A -> B
+    if to_ns and to_ns in PLUGINS and to_ns != ns:
+        m = dict(m)
+        m["from_ns"] = ns
+        plugin_call(to_ns, "on_message", client, m)
+        return
+    # 插件事件广播：所有插件 on_event(evt, data)
+    evt = m.get("evt")
+    if evt is not None and not ns:
+        data = m.get("data")
+        for name in list(PLUGINS.keys()):
+            fn = getattr(PLUGINS[name], "on_event", None)
+            if fn is None:
+                continue
+            try:
+                fn(evt, data)
+            except Exception as e:
+                print(f"[plugin] {name}.on_event 异常: {e}", flush=True)
+        return
+    if not ns or ns not in PLUGINS:
+        if client and client.get("sock") is not None:
+            send(client["sock"], {"t": "err", "m": f"未知插件命名空间: {ns}"})
+        return
+    plugin_call(ns, "on_message", client, m)
+
+
+def plugin_list():
+    """返回插件列表（供客户端检测服务器 mod）。"""
+    out = []
+    for name, mod in sorted(PLUGINS.items()):
+        out.append({
+            "name": name,
+            "version": str(getattr(mod, "VERSION", "?")),
+            "desc": str(getattr(mod, "DESC", "")),
+            "author": str(getattr(mod, "AUTHOR", "")),
+        })
+    return out
+
+
+def plugin_send_to(name, target, op, data=None):
+    """插件间定向调用：插件 A 调用插件 B 的 on_plugin_message(op, data)。"""
+    mod = PLUGINS.get(target)
+    if mod is None:
+        return False
+    fn = getattr(mod, "on_plugin_message", None)
+    if fn is None:
+        return False
+    try:
+        fn(name, op, data)
+        return True
+    except Exception as e:
+        print(f"[plugin] {name}->{target} 通信异常: {e}", flush=True)
+        return False
+
+
+def plugin_broadcast_event(evt, data=None, exclude=None):
+    """插件事件广播：所有插件 on_event(evt, data)。"""
+    for name in list(PLUGINS.keys()):
+        if name == exclude:
+            continue
+        fn = getattr(PLUGINS[name], "on_event", None)
+        if fn is None:
+            continue
+        try:
+            fn(evt, data)
+        except Exception as e:
+            print(f"[plugin] {name}.on_event 异常: {e}", flush=True)
+
+def plugin_handle_chat(client, text):
+    """把聊天消息传给插件 on_chat；返回 True 表示插件消费了消息。"""
+    consumed = False
+    for name in list(PLUGINS.keys()):
+        fn = getattr(PLUGINS[name], "on_chat", None)
+        if fn is None:
+            continue
+        try:
+            r = fn(client, text)
+            if r is True:
+                consumed = True
+        except Exception as e:
+            print(f"[plugin] {name}.on_chat 异常: {e}", flush=True)
+    return consumed
+
+def plugin_handle_command(client, cmd, args):
+    """把聊天命令（!xxx）传给插件 on_command。"""
+    for name in list(PLUGINS.keys()):
+        fn = getattr(PLUGINS[name], "on_command", None)
+        if fn is None:
+            continue
+        try:
+            fn(client, cmd, args)
+        except Exception as e:
+            print(f"[plugin] {name}.on_command 异常: {e}", flush=True)
+
+
+load_plugins()
+# 后台线程：周期触发 on_tick
+def _plugin_ticker_loop():
+    while True:
+        time.sleep(PLUGIN_TICK_INTERVAL)
+        try:
+            plugin_tick()
+        except Exception:
+            pass
+
+threading.Thread(target=_plugin_ticker_loop, daemon=True).start()
+# ========== 插件系统结束 ==========
 
 reload_dynamic()
 threading.Thread(target=reporter, daemon=True).start()
