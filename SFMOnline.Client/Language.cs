@@ -46,6 +46,7 @@ namespace SFMOnline
             Add("menu_local", "── 本地测试 ──", "── Local Test ──");
             Add("menu_settings", "── 设置 ──", "── Settings ──");
             Add("menu_chat", "── 聊天 ──", "── Chat ──");
+            Add("menu_chat_room", "房间", "Room");
             Add("menu_players", "── 玩家列表 ──", "── Player List ──");
             Add("menu_tunnel", "── 内网穿透 / 樱花映射 ──", "── Tunnel / SakuraFRP ──");
 
