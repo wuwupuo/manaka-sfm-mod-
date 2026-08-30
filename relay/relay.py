@@ -392,9 +392,40 @@ def send(fd, o):
         pass
 
 
+def send_raw(fd, payload_bytes):
+    """发送已序列化的字节（广播优化用），失败静默。"""
+    try:
+        c = client_for_socket(fd)
+        send_lock = c.get("_send_lock") if c else None
+        if send_lock:
+            with send_lock:
+                fd.sendall(payload_bytes)
+        else:
+            fd.sendall(payload_bytes)
+    except Exception:
+        pass
+
+
 def broadcast_all(o, ex=None):
     with lock:
         recipients = [(u, c) for u, c in clients.items() if u != ex]
+    # 明文路径预序列化一次，避免 N 次重复 dumps（加密客户端逐条处理）
+    pre = None
+    plain = True
+    for _, c in recipients:
+        if c and c.get("key"):
+            plain = False
+            break
+    if plain and recipients:
+        try:
+            pre = (json.dumps(o, ensure_ascii=False, separators=(",", ":")) + "\n").encode("utf-8")
+        except Exception:
+            pre = None
+    if pre is not None:
+        for _, c in recipients:
+            if c and c.get("sock") is not None:
+                send_raw(c["sock"], pre)
+        return
     for _, c in recipients:
         send(c["sock"], o)
 
@@ -404,6 +435,23 @@ def broadcast_room(rid, o, ex=None):
         room = rooms.get(rid)
         member_ids = list(room.get("players", {}).keys()) if room else []
         recipients = [(u, clients.get(u)) for u in member_ids if u != ex]
+    # 预序列化一次（明文），减少高频率同步消息的 CPU 开销
+    pre = None
+    plain = True
+    for _, c in recipients:
+        if c and c.get("key"):
+            plain = False
+            break
+    if plain and recipients:
+        try:
+            pre = (json.dumps(o, ensure_ascii=False, separators=(",", ":")) + "\n").encode("utf-8")
+        except Exception:
+            pre = None
+    if pre is not None:
+        for _, c in recipients:
+            if c and c.get("room") == rid and c.get("sock") is not None:
+                send_raw(c["sock"], pre)
+        return
     for _, c in recipients:
         if c and c.get("room") == rid:
             send(c["sock"], o)
@@ -797,7 +845,7 @@ class Handler(socketserver.BaseRequestHandler):
             stamp = time.time()
             room = rooms.get(rid, {})
             player_count = len(room.get("players", {}))
-            motion_hz = 16.0 if player_count <= 3 else (12.0 if player_count <= 5 else (10.0 if player_count <= 7 else 8.0))
+            motion_hz = 12.0 if player_count <= 3 else (8.0 if player_count <= 5 else (6.0 if player_count <= 7 else 5.0))
             signature = (
                 1 if m.get("moving") else 0,
                 1 if m.get("crouch") else 0,
@@ -841,7 +889,7 @@ class Handler(socketserver.BaseRequestHandler):
             rid = clients.get(self.uid, {}).get("room", "")
             bc = clients.get(self.uid)
             bone_stamp = time.time()
-            if rid and bc and bone_stamp - float(bc.get("last_bone_at", 0.0)) >= 1.0 / 6.0:
+            if rid and bc and bone_stamp - float(bc.get("last_bone_at", 0.0)) >= 1.0 / 4.0:
                 bc["last_bone_at"] = bone_stamp
                 broadcast_room(rid, {"t": "bone_sync", "uid": self.uid, "slot": int(m.get("slot", 0)), "q": m.get("q", [])}, self.uid)
         elif t == "action_sync":
@@ -866,6 +914,13 @@ class Handler(socketserver.BaseRequestHandler):
                 broadcast_room(rid, {"t": "appearance_request", "uid": self.uid}, self.uid)
         elif t == "room_setting":
             self.do_room_setting(m)
+        elif t == "time_sync":
+            # 房主时间同步：广播给同房间（带 uid 供接收端识别来源）
+            rid = clients.get(self.uid, {}).get("room", "")
+            if rid and self.allow_rate("time_sync", 5, 5.0):
+                m = dict(m)
+                m["uid"] = self.uid
+                broadcast_room(rid, m, self.uid)
         elif t == "ext" or (t and t.startswith("ext_")):
             # 通用 mod 同步通道（内建支持，无需插件）：
             #   ext_evt/ext_score/ext_sync/ext_bone/ext_trigger/ext_npc/ext_team/
@@ -885,12 +940,13 @@ class Handler(socketserver.BaseRequestHandler):
                         handled = True
             if not handled:
                 self.do_ext_forward(m)
-        elif t.startswith("game_"):
-            send(self.request, {"t": "err", "m": "该玩法已移除"})
-        elif t in ("chat", "sync", "action"):
-            self.do_room_msg(t, m)
+        elif t.startswith("game_") or t in ("chat", "sync", "action"):
+            # 已移除的旧玩法 / 兼容旧客户端消息：静默丢弃，不返回 err 防止刷屏
+            pass
         else:
-            send(self.request, {"t": "err", "m": "未知消息类型"})
+            # 未知消息类型：静默丢弃（限频告警），不返回 err 防止客户端聊天框刷屏
+            if self.allow_rate("unknown_msg", 3, 5.0):
+                send(self.request, {"t": "err", "m": "未知消息类型（已忽略）"})
 
     def do_hello(self, m):
         global rejections
