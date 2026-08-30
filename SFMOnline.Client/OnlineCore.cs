@@ -518,6 +518,7 @@ namespace SFMOnline
         private string _serverAdminChatStatus = "";
         private bool _showServerSettings = false;
         private bool _showChatMenu = false;
+        private string _chatTab = "room";
         private bool _announceExpanded = false;
         private bool _masterAnnExpand = false;
         private Vector2 _masterAnnScroll = Vector2.zero;
@@ -3313,8 +3314,14 @@ private void RefreshMasterData()
         _masterUpdateDownloaded = _masterUpdateDownloaded || staged;
         _masterUpdateReady = v.ok && v.version.Length > 0 && !sameVer && (IsNewerVersion(v.version) || v.forceReplace == 1);
         _masterForceUpdate = v.ok && (v.force == 1 || v.forceReplace == 1) && _masterUpdateReady && !fileMatches;
-        if (_masterForceUpdate && !_masterUpdateDownloaded && _masterLatestUrl.Length > 0) DownloadMasterUpdate();
         _masterClientTampered = v.ok && sameVer && v.md5.Length > 0 && localMd5.Length > 0 && !fileMatches;
+        // 客户端被修改（同版本但 md5 不符）：直接视为需要更新，自动下载官方文件覆盖，不再卡登录
+        if (_masterClientTampered && v.ok && v.md5.Length > 0 && v.url.Length > 0)
+        {
+            _masterForceUpdate = true;
+            _masterUpdateReady = true;
+        }
+        if (_masterForceUpdate && !_masterUpdateDownloaded && _masterLatestUrl.Length > 0) DownloadMasterUpdate();
     }, err => { });
     RunServer(() => MasterClient.Credits(), r =>
     {
@@ -4562,6 +4569,18 @@ private void HandleRelayLine(string line)
             _relayGhostLastSeen.Remove(lu);
             _relayGhostIgnoreUntil[lu] = Time.unscaledTime + 8f;
             RemoveRelayGhost(lu);
+            // 离开的玩家是我的控制器/被控对象时，立即解除链接，防止"原地卡死"
+            if (_toyLinkedController == lu || _toyLinkedTarget == lu)
+            {
+                _toyLinkedTargets.Remove(lu);
+                _toyLinkedTarget = "";
+                _toyLinkedController = "";
+                _leashOverSince = 0f;
+                ResetToyLocal();
+                ApplyCrouch(false);
+                if (_leashLine != null) _leashLine.enabled = false;
+                AddRelayLine("[主仆] " + JsonHelper.Str(m, "name") + " 已离开，控制关系解除");
+            }
         }
         else if (t == "room_closed")
         {
@@ -4607,13 +4626,7 @@ private void HandleRelayLine(string line)
             string message = JsonHelper.Str(m, "m");
             if (message.Length == 0) message = JsonHelper.Str(m, "msg");
             if (message.Length == 0) message = code.Length > 0 ? code : "服务器拒绝了请求";
-            if (_lastRelayChatLine.Length > 0)
-            {
-                int pendingIndex = _relayChat.LastIndexOf(_lastRelayChatLine);
-                if (pendingIndex >= 0) _relayChat.RemoveAt(pendingIndex);
-                _lastRelayChatLine = "";
-            }
-            AddRelayLine("[错误] " + message);
+            // err 不再写入聊天框（防止未知消息/旧玩法消息刷屏），仅弹提示
             Toast(message);
             if (code.IndexOf("captcha", StringComparison.OrdinalIgnoreCase) >= 0 ||
                 message.IndexOf("验证码", StringComparison.OrdinalIgnoreCase) >= 0)
@@ -6770,17 +6783,8 @@ private void SetSelfTint(Color? tint)
 [HideFromIl2Cpp]
 private void GameFKey()
 {
-    if (_gamePhase != "playing" || !_relayConnected || _relayRoomId.Length == 0) return;
-    if (Time.unscaledTime - _gameLastFKey < 0.6f) return;
-    _gameLastFKey = Time.unscaledTime;
-    if (_gameRole == "catcher")
-    {
-        string nearest = FindNearestOther();
-        if (nearest.Length > 0)
-            RelayTcp.Send(new Dictionary<string, object> { ["t"] = "game_catch", ["mode"] = "hide_seek", ["target"] = nearest });
-    }
-    else if (_gameRole == "hider")
-        RelayTcp.Send(new Dictionary<string, object> { ["t"] = "game_escape", ["mode"] = "hide_seek", ["point"] = 0 });
+    // 捉迷藏玩法已从服务器移除，不再发送 game_* 消息（防止服务器 err 刷屏）
+    return;
 }
 
 [HideFromIl2Cpp]
@@ -6915,7 +6919,6 @@ private void CheckFoundByNpc()
                 _gameRedUntil = Time.unscaledTime + 5f;
                 _gameStopUntil = Time.unscaledTime + 10f;
                 ApplyGameEffect();
-                RelayTcp.Send(new Dictionary<string, object> { ["t"] = "game_found", ["mode"] = "hide_seek" });
             }
         }
         else _gameFoundSent = false;
@@ -6930,8 +6933,7 @@ private void UpdateLcMode()
     CheckFoundByNpc();
     if (_gameLcPoint >= 0 && _gameRole == "hider")
     {
-        bool near = NearNpc(8f);
-        RelayTcp.Send(new Dictionary<string, object> { ["t"] = "game_lc", ["mode"] = "hide_seek", ["boost"] = near ? 1 : 0 });
+        // 捉迷藏玩法已移除，不再发送 game_lc
     }
     if (Time.unscaledTime - _lcLastApply < 1f) return;
     _lcLastApply = Time.unscaledTime;
@@ -6989,6 +6991,25 @@ private void UpdateLeashLine()
 
         // 被牵引者：超出 3 米 -> 先阻止(爬行)，持续 3 秒仍超则断开（除非永不断开）
         float dist = Vector3.Distance(self, other);
+        // 控制器失联防护：对方不在位置表/超过 40 秒无更新，自动解除链接，防止"原地卡死"
+        if (_toyLinkedController.Length > 0)
+        {
+            bool controllerMissing = !_relayPositions.TryGetValue(_toyLinkedController, out var _);
+            if (controllerMissing || !_relayGhostLastSeen.TryGetValue(_toyLinkedController, out var lastSeenT) ||
+                Time.unscaledTime - lastSeenT > 40f)
+            {
+                RelayTcp.Send(new Dictionary<string, object> { ["t"] = "toy_revoke" });
+                _toyLinkedTargets.Remove(_toyLinkedController);
+                _toyLinkedTarget = "";
+                _toyLinkedController = "";
+                _leashOverSince = 0f;
+                ResetToyLocal();
+                ApplyCrouch(false);
+                if (_leashLine != null) _leashLine.enabled = false;
+                AddRelayLine("[主仆] 控制器已失联，自动解除");
+                return;
+            }
+        }
         if (_toyLinkedController.Length > 0 && dist > 3f)
         {
             ApplyCrouch(true);
@@ -8101,86 +8122,78 @@ private void DrawDmPanel()
 [HideFromIl2Cpp]
 private void DrawChatMenu()
 {
-    var rect = new Rect(30f, 40f, 340f, 430f);
-    GUI.Box(rect, Lang.Get("menu_chat") + " (Server)");
+    var rect = new Rect(30f, 40f, 340f, 460f);
+    GUI.Box(rect, Lang.Get("menu_chat"));
     float x = rect.x + 10f;
     float y = rect.y + 30f;
     float w = rect.width - 20f;
     const float h = 22f;
+    // 页签：总服聊天 / 房间聊天（直连时仅局域网聊天）
     if (Connected)
     {
-        GUI.Box(new Rect(x, y, w, 260f), "");
-        int directChatStart = Math.Max(0, _chatMessages.Count - 12);
-        float directChatY = y + 5f;
-        for (int i = directChatStart; i < _chatMessages.Count; i++)
+        DrawChatMenuDirect(x, y, w, h, rect);
+        return;
+    }
+    bool hasRelay = _relayConnected && _relayRoomId.Length > 0;
+    if (hasRelay || _loggedIn || _isServerConnected)
+    {
+        // 页签栏
+        string tabRoom = Lang.Get("menu_chat_room");
+        string tabPub = Lang.Get("menu_pubchat");
+        if (SButton(new Rect(x, y, w * 0.5f - 3f, 22f), (_chatTab == "room" ? "▶ " : "") + tabRoom)) _chatTab = "room";
+        if (SButton(new Rect(x + w * 0.5f + 3f, y, w * 0.5f - 3f, 22f), (_chatTab == "pub" ? "▶ " : "") + tabPub)) _chatTab = "pub";
+        y += 28f;
+        if (_chatTab == "pub")
         {
-            GUI.Label(new Rect(x + 6f, directChatY, w - 12f, 17f), _chatMessages[i]);
-            directChatY += 18f;
+            DrawChatPubTab(x, y, w, h, rect);
+            return;
         }
-        y += 270f;
-        _chatInput = UiTextField("lan_chat_f11", new Rect(x, y, w - 70f, h), _chatInput, false, out bool directSubmit);
-        if (directSubmit || (_canButton && GUI.Button(new Rect(x + w - 64f, y, 64f, h), Lang.Get("btn_send"))))
-            SendChat(_chatInput);
-        y += 30f;
-        if (IsHosting)
+        if (hasRelay)
         {
-            foreach (var p in _peers.Values)
+            GUI.Box(new Rect(x, y, w, 250f), "");
+            int relayChatStart = Math.Max(0, _relayChat.Count - 11);
+            float relayChatY = y + 5f;
+            for (int i = relayChatStart; i < _relayChat.Count; i++)
             {
-                if (p.Id == PeerId) continue;
-                if (_canLabel) GUI.Label(new Rect(x, y, w - 70f, 20f), p.Name + "  " + p.RttMs + "ms");
-                if (_canButton && GUI.Button(new Rect(x + w - 64f, y, 60f, 20f), Lang.Get("kick")))
-                    _host?.KickClient(p.Id);
-                y += 22f;
-                if (y > rect.y + rect.height - 30f) break;
+                GUI.Label(new Rect(x + 6f, relayChatY, w - 12f, 17f), _relayChat[i]);
+                relayChatY += 18f;
             }
-        }
-        return;
-    }
-    if (_relayConnected && _relayRoomId.Length > 0)
-    {
-        GUI.Box(new Rect(x, y, w, 260f), "");
-        int relayChatStart = Math.Max(0, _relayChat.Count - 12);
-        float relayChatY = y + 5f;
-        for (int i = relayChatStart; i < _relayChat.Count; i++)
-        {
-            GUI.Label(new Rect(x + 6f, relayChatY, w - 12f, 17f), _relayChat[i]);
-            relayChatY += 18f;
-        }
-        y += 270f;
-        _relayChatInput = UiTextField("relay_chat_f11", new Rect(x, y, w - 70f, h), _relayChatInput, false, out bool relaySubmit);
-        if (relaySubmit || (_canButton && GUI.Button(new Rect(x + w - 64f, y, 64f, h), Lang.Get("btn_send"))))
-        {
-            if (PrepareOutgoingChat(_relayChatInput, out string message))
+            y += 260f;
+            _relayChatInput = UiTextField("relay_chat_f11", new Rect(x, y, w - 70f, h), _relayChatInput, false, out bool relaySubmit);
+            if (relaySubmit || (_canButton && GUI.Button(new Rect(x + w - 64f, y, 64f, h), Lang.Get("btn_send"))))
             {
-                RelayTcp.Send(new Dictionary<string, object> { ["t"] = "chat", ["room_id"] = _relayRoomId, ["d"] = message });
-                _lastRelayChatLine = (_authUsername.Length > 0 ? _authUsername : "我") + ": " + message;
-                AddRelayLine(_lastRelayChatLine);
-                _relayChatInput = "";
+                if (PrepareOutgoingChat(_relayChatInput, out string message))
+                {
+                    RelayTcp.Send(new Dictionary<string, object> { ["t"] = "chat", ["room_id"] = _relayRoomId, ["d"] = message });
+                    _lastRelayChatLine = (_authUsername.Length > 0 ? _authUsername : "我") + ": " + message;
+                    AddRelayLine(_lastRelayChatLine);
+                    _relayChatInput = "";
+                }
             }
+            return;
         }
+        DrawChatServerTab(x, y, w, h, rect);
         return;
     }
-    if (!_isServerConnected || string.IsNullOrEmpty(_serverMyRoomId))
+    GUI.Label(new Rect(x, y, w, h), Lang.Get("no_connection"));
+}
+
+// 直连（局域网/房主）聊天页
+[HideFromIl2Cpp]
+private void DrawChatMenuDirect(float x, float y, float w, float h, Rect rect)
+{
+    GUI.Box(new Rect(x, y, w, 250f), "");
+    int directChatStart = Math.Max(0, _chatMessages.Count - 11);
+    float directChatY = y + 5f;
+    for (int i = directChatStart; i < _chatMessages.Count; i++)
     {
-        GUI.Label(new Rect(x, y, w, h), Lang.Get("no_connection"));
-        return;
+        GUI.Label(new Rect(x + 6f, directChatY, w - 12f, 17f), _chatMessages[i]);
+        directChatY += 18f;
     }
-    GUI.Box(new Rect(x, y, w, 260f), "");
-    int start = Math.Max(0, _serverChatMessages.Count - 12);
-    float ly = y + 5f;
-    for (int i = start; i < _serverChatMessages.Count; i++)
-    {
-        GUI.Label(new Rect(x + 6f, ly, w - 12f, 17f), _serverChatMessages[i]);
-        ly += 18f;
-    }
-    y += 270f;
-    _serverChatInput = UiTextField("srv_chat_f11", new Rect(x, y, w - 70f, h), _serverChatInput, false, out bool submit);
-    if (_canButton && GUI.Button(new Rect(x + w - 64f, y, 64f, h), Lang.Get("btn_send")))
-        SendServerChat();
-    if (submit) SendServerChat();
-    y += 30f;
-    if (_canButton && GUI.Button(new Rect(x, y, w, 24f), Lang.Get("refresh")))
-        RefreshServerChat();
+    y += 260f;
+    _chatInput = UiTextField("lan_chat_f11", new Rect(x, y, w - 70f, h), _chatInput, false, out bool directSubmit);
+    if (directSubmit || (_canButton && GUI.Button(new Rect(x + w - 64f, y, 64f, h), Lang.Get("btn_send"))))
+        SendChat(_chatInput);
     y += 30f;
     if (IsHosting)
     {
@@ -8198,6 +8211,55 @@ private void DrawChatMenu()
     }
 }
 
+// 总服公共聊天页（F11）
+[HideFromIl2Cpp]
+private void DrawChatPubTab(float x, float y, float w, float h, Rect rect)
+{
+    GUI.Box(new Rect(x, y, w, 250f), "");
+    int start = Math.Max(0, _pubMsgs.Count - 11);
+    float ly = y + 5f;
+    for (int i = start; i < _pubMsgs.Count; i++)
+    {
+        var m = _pubMsgs[i];
+        string from = JsonHelper.Str(m, "from");
+        string msg = JsonHelper.Str(m, "m");
+        if (msg.Length == 0) msg = JsonHelper.Str(m, "message");
+        GUI.Label(new Rect(x + 6f, ly, w - 12f, 17f), from + ": " + msg);
+        ly += 18f;
+    }
+    y += 260f;
+    _pubInput = UiTextField("pub_chat_f11", new Rect(x, y, w - 70f, h), _pubInput, false, out bool pubSubmit);
+    if (pubSubmit || (_canButton && GUI.Button(new Rect(x + w - 64f, y, 64f, h), Lang.Get("btn_send"))))
+    {
+        if (_pubInput.Trim().Length > 0)
+            SendPubChat();
+    }
+    y += 30f;
+    if (_canButton && GUI.Button(new Rect(x, y, w, 24f), Lang.Get("refresh")))
+        UpdatePubPoll();
+}
+
+// 旧总服房间聊天页（F11 保留）
+[HideFromIl2Cpp]
+private void DrawChatServerTab(float x, float y, float w, float h, Rect rect)
+{
+    GUI.Box(new Rect(x, y, w, 250f), "");
+    int start = Math.Max(0, _serverChatMessages.Count - 11);
+    float ly = y + 5f;
+    for (int i = start; i < _serverChatMessages.Count; i++)
+    {
+        GUI.Label(new Rect(x + 6f, ly, w - 12f, 17f), _serverChatMessages[i]);
+        ly += 18f;
+    }
+    y += 260f;
+    _serverChatInput = UiTextField("srv_chat_f11", new Rect(x, y, w - 70f, h), _serverChatInput, false, out bool submit);
+    if (_canButton && GUI.Button(new Rect(x + w - 64f, y, 64f, h), Lang.Get("btn_send")))
+        SendServerChat();
+    if (submit) SendServerChat();
+    y += 30f;
+    if (_canButton && GUI.Button(new Rect(x, y, w, 24f), Lang.Get("refresh")))
+        RefreshServerChat();
+}
 [HideFromIl2Cpp]
 private void DrawJoinPwdPrompt()
 {
@@ -8621,9 +8683,9 @@ private void DrawMenu()
     // 账号登录门：未登录只显示登录/注册界面
     if (_masterClientTampered)
     {
-        if (_canLabel) SLabel(new Rect(_uiX, _uiY, _uiW, 30f), "⛔ " + Lang.Get("tamper_warn"));
+        // 客户端被修改：显示警告 + 自动更新（复用 _masterForceUpdate 流程），不阻断操作
+        if (_canLabel) SLabel(new Rect(_uiX, _uiY, _uiW, 30f), "⛔ " + Lang.Get("tamper_warn") + "（已自动修复）");
         _uiY += 38f;
-        return;
     }    if (_masterForceUpdate)
     {
         if (_canLabel) SLabel(new Rect(_uiX, _uiY, _uiW, 26f), "⚠️ " + Lang.Get("update_force") + " v" + _masterLatestVersion);
@@ -8690,9 +8752,9 @@ private void DrawMenu()
     }
     _uiY += 26f;
 
-    // F10 只放联机/房间；F12 只放账号、好友与普通社交功能
+    // F10 放联机/房间/好友；F12 放账号、好友与普通社交功能
     const float tbW = 66f;
-    int totalTabs = _onlineMenuOnly ? 2 : (_authAdminActions.Count > 0 ? 6 : 5);
+    int totalTabs = _onlineMenuOnly ? 3 : (_authAdminActions.Count > 0 ? 6 : 5);
     float maxTabScroll = Mathf.Max(0f, totalTabs * tbW - _uiW + 44f);
     _tabScroll = Mathf.Clamp(_tabScroll, 0f, maxTabScroll);
     if (_canButton && SButton(new Rect(_uiX, _uiY, 26f, 22f), "◀")) _tabScroll = Mathf.Max(0f, _tabScroll - tbW);
@@ -8704,10 +8766,25 @@ private void DrawMenu()
         if(_canButton&&SButton(new Rect(tx,0f,60f,22f),Lang.Get("menu_room")))_menuTab="room";
         tx+=tbW;
         if (_canButton && SButton(new Rect(tx, 0f, 60f, 22f), Lang.Get("menu_online"))) _menuTab = "online";
+        tx+=tbW;
+        // 好友：有请求时显示红点
+        if (_canButton && SButton(new Rect(tx, 0f, 60f, 22f), Lang.Get("menu_friend") + (_friendRequests.Count > 0 ? " ●" : ""))) _menuTab = "friend";
+        if (_friendRequests.Count > 0)
+        {
+            GUI.color = new Color(1f, 0.15f, 0.15f, 1f);
+            GUI.DrawTexture(new Rect(tx + 52f, 2f, 10f, 10f), WhiteTex());
+            GUI.color = Color.white;
+        }
     }
     else
     {
-        if (_canButton && SButton(new Rect(tx, 0f, 60f, 22f), Lang.Get("menu_friend"))) _menuTab = "friend";
+        if (_canButton && SButton(new Rect(tx, 0f, 60f, 22f), Lang.Get("menu_friend") + (_friendRequests.Count > 0 ? " ●" : ""))) _menuTab = "friend";
+        if (_friendRequests.Count > 0)
+        {
+            GUI.color = new Color(1f, 0.15f, 0.15f, 1f);
+            GUI.DrawTexture(new Rect(tx + 52f, 2f, 10f, 10f), WhiteTex());
+            GUI.color = Color.white;
+        }
         tx += tbW;
         if (_canButton && SButton(new Rect(tx, 0f, 60f, 22f), Lang.Get("menu_pubchat"))) _menuTab = "chat";
         tx += tbW;
