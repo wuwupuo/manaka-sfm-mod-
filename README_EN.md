@@ -52,8 +52,10 @@ For detailed instructions, please refer to [Client Usage Guide](client/Client-Us
 
 - [SFMOnline_Relay_Windows_v1.0.3.zip](release/SFMOnline_Relay_Windows_v1.0.3.zip): Windows One-Click Version (Double-click to start the online server after extraction.bat)
 - [SFMOnline_Relay_Linux_v1.0.3.zip](release/SFMOnline_Relay_Linux_v1.0.3.zip): One-click Linux version (after decompression, run ./start.sh)
-- [SFMOnline_Client_v1.0.8.zip](release/SFMOnline_Client_v1.0.8.zip): Client integration package (after decompression, put the contents of BepInEx into the game directory, or directly download client/SFMOnline_1.0.8.dll and put it into BepInEx/plugins/).
+- [SFMOnline_Client_v1.0.9.zip](release/SFMOnline_Client_v1.0.9.zip): Client integration package (after decompression, put the contents of BepInEx into the game directory, or directly download client/SFMOnline_1.0.9.dll and put it into BepInEx/plugins/).
 
+> **Client v1.0.9 Update**: Fixed room chat "unknown message type" spam; fixed server lag at 5+ players (pre-serialized broadcasts + lower sync rates); fixed player getting stuck in place (auto-unlink when controller goes offline); F10 menu now has a Friends tab with red dot badge; F11 chat has dual tabs (Room / Lobby); tampered client auto-downloads the official build to repair itself; new SFMOnlineMods folder auto-loads mods; dev docs rewritten for beginners.
+>
 > **Client v1.0.8 Update**: Client source code is now **open source** (string encryption removed). Added **27 new `remote.*` gameplay control functions** (action/vibrate/thrust/goods/undress/orgasm/pee/crouch/crawl/sit/handcuff/collar/blindfold/fx/teleport — target a specific player or broadcast to all). Added player queries (net.get_player_name / net.find_uid / net.get_players_info). Framework now exposes **314 functions** for mod development (see docs/).
 >
 > **Client v1.0.6 Update**: Fixed the issue of remote players' hair/ribbons (slim elongated renderers) disappearing. Adjusted the ghost renderer filter logic so it no longer wrongly hides slim renderers.
