@@ -23,6 +23,12 @@ namespace SFMOnline
                     try { SFMOnline.Ext.SfmExt.InitNow(); }
                     catch (Exception ex) { Log.LogWarning("Ext 初始化失败: " + ex.Message); }
                 });
+                // 模组文件夹：游戏目录\SFMOnlineMods\ 下的 DLL 自动加载（mod 即前置包）
+                System.Threading.ThreadPool.QueueUserWorkItem(_ =>
+                {
+                    try { ModLoader.LoadMods(); }
+                    catch (Exception ex) { Log.LogWarning("模组文件夹加载失败: " + ex.Message); }
+                });
                 Log.LogInfo($"{PluginInfo.Name} v{PluginInfo.Version} 已加载。游戏内按 F10 打开联机菜单，F12 打开普通菜单，F11 打开聊天。");
                 ClientLog.Write("模组加载 v" + PluginInfo.Version);
             }
@@ -87,7 +93,7 @@ public static class PluginInfo
     {
         public const string GUID = "com.sfm.online";
         public const string Name = "SFM 在线联机";
-        public const string Version = "1.0.8";
+        public const string Version = "1.0.9";
         internal static ManualLogSource Logger;
 
         internal static void Info(string msg) => Logger?.LogInfo(msg);
