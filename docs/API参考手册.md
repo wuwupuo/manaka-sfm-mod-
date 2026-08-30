@@ -1,13 +1,22 @@
-# SFM Online Ext API 完整参考（314 个函数）
+# SFM Online Ext API 参考（314 个函数）
 
-> 调用方式：`SfmExt.CallFunction("函数名", new SfmExtParams().Set("参数", 值))`
+> 所有函数统一用这一句调用：
 
-> 返回值：`SfmExtValue`（`.ToFloat()` 数字 / `.ToString()` 文本 / `.ToBool()` 布尔 / `["key"]` 列表）
+> ```csharp
+> SfmExt.CallFunction("函数名", new SfmExtParams().Set("参数名", 值))
+> ```
 
-> 另有 C# 直调等价类（`SfmExtScore.Get`、`SfmExtHud.CreateText` 等），见各模块说明。
+> 参数名就是函数表格里列的参数。返回值用：数字 `.ToFloat()`、文本 `.ToString()`、布尔 `.ToBool()`、列表 `["键"]`。
+
+> 每个分类底下都给了**抄了就能用**的示例。
 
 
 ## 系统与日志（10 个）
+
+**示例**：
+```csharp
+SfmExt.CallFunction("system.log", new SfmExtParams().Set("text", "你好"));
+```
 
 | 函数 | 参数 |
 |---|---|
@@ -24,6 +33,11 @@
 
 
 ## 字符串（12 个）
+
+**示例**：
+```csharp
+SfmExt.CallFunction("string.format", new SfmExtParams().Set("format", "HP:{0}").Set("arg0", 100));
+```
 
 | 函数 | 参数 |
 |---|---|
@@ -42,6 +56,11 @@
 
 
 ## 数学（38 个）
+
+**示例**：
+```csharp
+SfmExt.CallFunction("math.randomint", new SfmExtParams().Set("min", 1).Set("max", 6));
+```
 
 | 函数 | 参数 |
 |---|---|
@@ -87,6 +106,11 @@
 
 ## 变量与列表（15 个）
 
+**示例**：
+```csharp
+SfmExt.CallFunction("var.set", new SfmExtParams().Set("name", "hp").Set("value", 50));
+```
+
 | 函数 | 参数 |
 |---|---|
 | `list.add` | name, value |
@@ -108,6 +132,11 @@
 
 ## 事件（5 个）
 
+**示例**：
+```csharp
+SfmExtEvent.EmitNet("my_event", new SfmExtValue(42));
+```
+
 | 函数 | 参数 |
 |---|---|
 | `event.emit` | event, value |
@@ -118,6 +147,11 @@
 
 
 ## 文件（6 个）
+
+**示例**：
+```csharp
+SfmExt.CallFunction("file.write", new SfmExtParams().Set("path", "~/mods/data.txt").Set("content", "hi"));
+```
 
 | 函数 | 参数 |
 |---|---|
@@ -131,6 +165,11 @@
 
 ## 颜色（2 个）
 
+**示例**：
+```csharp
+SfmExt.CallFunction("color.rgb", new SfmExtParams().Set("r", 1f).Set("g", 0.5f).Set("b", 0f));
+```
+
 | 函数 | 参数 |
 |---|---|
 | `color.rgb` | r, g, b |
@@ -138,6 +177,11 @@
 
 
 ## 积分表（5 个）
+
+**示例**：
+```csharp
+SfmExtScore.Add("金币", 10, broadcast: true);
+```
 
 | 函数 | 参数 |
 |---|---|
@@ -150,6 +194,11 @@
 
 ## 存档（4 个）
 
+**示例**：
+```csharp
+SfmExtSave.Set("myMod", "level", 5);
+```
+
 | 函数 | 参数 |
 |---|---|
 | `save.get` | space, key |
@@ -160,6 +209,11 @@
 
 ## 骨骼（3 个）
 
+**示例**：
+```csharp
+SfmExt.CallFunction("bone.setrot", new SfmExtParams().Set("bone", "Head").Set("x", 0).Set("y", 90).Set("z", 0));
+```
+
 | 函数 | 参数 |
 |---|---|
 | `bone.find` | uid, bone |
@@ -168,6 +222,11 @@
 
 
 ## 区域与触发（6 个）
+
+**示例**：
+```csharp
+var a = SfmExtAreaManager.Create("zone", SfmExtAreaShape.Sphere, new Vector3(0,0,0), 3f);
+```
 
 | 函数 | 参数 |
 |---|---|
@@ -180,6 +239,11 @@
 
 
 ## 游戏状态（63 个）
+
+**示例**：
+```csharp
+SfmExt.CallFunction("game.set_ecstasy", new SfmExtParams().Set("value", 80));
+```
 
 | 函数 | 参数 |
 |---|---|
@@ -250,6 +314,11 @@
 
 ## 玩家交互（17 个）
 
+**示例**：
+```csharp
+SfmExt.CallFunction("interact.follow", new SfmExtParams().Set("uid", "xxx"));
+```
+
 | 函数 | 参数 |
 |---|---|
 | `interact.action` | uid, action |
@@ -272,6 +341,11 @@
 
 
 ## 远程玩法控制（27 个）
+
+**示例**：
+```csharp
+SfmExt.CallFunction("remote.orgasm", new SfmExtParams().Set("uid", "*").Set("mode", 1));
+```
 
 | 函数 | 参数 |
 |---|---|
@@ -305,6 +379,11 @@
 
 
 ## 联机消息（34 个）
+
+**示例**：
+```csharp
+SfmExtMsg.SendToRoom(new Dictionary<string,object>{{"t","ext_my"}});
+```
 
 | 函数 | 参数 |
 |---|---|
@@ -346,6 +425,11 @@
 
 ## 玩法扩展（16 个）
 
+**示例**：
+```csharp
+SfmExtGameplay.Announce("公告内容");
+```
+
 | 函数 | 参数 |
 |---|---|
 | `achievement.has` | uid, name |
@@ -368,6 +452,11 @@
 
 ## 任务系统（5 个）
 
+**示例**：
+```csharp
+SfmExtTaskManager.Create("t1", "任务", "描述", rpReward: 50, synced: true);
+```
+
 | 函数 | 参数 |
 |---|---|
 | `task.add_checkpoint` | name, checkpoint, x, y, z, radius |
@@ -378,6 +467,11 @@
 
 
 ## NPC 系统（6 个）
+
+**示例**：
+```csharp
+SfmExtNpcManager.SpawnSynced("npc", new Vector3(0,0,0), "你好");
+```
 
 | 函数 | 参数 |
 |---|---|
@@ -390,6 +484,11 @@
 
 
 ## HUD（20 个）
+
+**示例**：
+```csharp
+SfmExtHud.CreateText("t", "文字", new Vector2(0.5f, 0.1f));
+```
 
 | 函数 | 参数 |
 |---|---|
@@ -417,6 +516,11 @@
 
 ## 随机与投票（9 个）
 
+**示例**：
+```csharp
+string u = SfmExtRandom.PickRandomPlayer();
+```
+
 | 函数 | 参数 |
 |---|---|
 | `random.coin` |  |
@@ -432,6 +536,11 @@
 
 ## 手机（3 个）
 
+**示例**：
+```csharp
+SfmExtPhone.Send("好友", "短信内容");
+```
+
 | 函数 | 参数 |
 |---|---|
 | `phone.chat` | name |
@@ -440,6 +549,11 @@
 
 
 ## 同步字段（4 个）
+
+**示例**：
+```csharp
+SfmExtSync.Register("hp", SfmExtValue.Type.Number, 100, hz: 5);
+```
 
 | 函数 | 参数 |
 |---|---|
