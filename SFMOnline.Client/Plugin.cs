@@ -93,7 +93,7 @@ public static class PluginInfo
     {
         public const string GUID = "com.sfm.online";
         public const string Name = "SFM 在线联机";
-        public const string Version = "1.0.9";
+        public const string Version = "1.0.10";
         internal static ManualLogSource Logger;
 
         internal static void Info(string msg) => Logger?.LogInfo(msg);
