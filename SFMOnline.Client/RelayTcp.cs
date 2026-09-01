@@ -2,6 +2,7 @@ using System;
 using System.Collections.Concurrent;
 using System.Collections.Generic;
 using System.IO;
+using System.Net;
 using System.Net.Sockets;
 using System.Security.Cryptography;
 using System.Text;
@@ -32,6 +33,111 @@ namespace SFMOnline
         private static readonly ConcurrentDictionary<string, string> LatestRealtime = new ConcurrentDictionary<string, string>();
         private static int _pendingIncoming;
         public static string LastError { get; private set; } = "";
+
+        // ========== UDP 数据面通道（v1.0.10） ==========
+        // 客户端绑定本机 UDP 8001 出战；发往服务器 UDP 8000 入站
+        // 高频数据（state/motion/bone/action/npc/pos）走 UDP，其余走 TCP
+        public const int UdpLocalPort = 8001;
+        public const int UdpRemotePort = 8000;
+        private static UdpClient _udp;
+        private static string _udpServerHost = "";
+        private static volatile bool _udpOn;
+        private static readonly ConcurrentQueue<string> UdpInbox = new ConcurrentQueue<string>();
+        private static readonly ConcurrentDictionary<string, string> UdpRealtime = new ConcurrentDictionary<string, string>();
+        private static Thread _udpRecvThread;
+        private static string _udpUid = "";
+        private static string _udpRoom = "";
+
+        /// <summary>设置 UDP 身份与房间（建房/入房/换房时更新，用于 UDP 包头部）。</summary>
+        public static void SetUdpIdentity(string uid, string room)
+        {
+            _udpUid = uid ?? "";
+            _udpRoom = room ?? "";
+        }
+
+        public static bool UdpActive => _udpOn && _udp != null;
+
+        /// <summary>启动 UDP 通道（连接成功后调用；host 为服务器地址）。</summary>
+        public static void StartUdp(string host)
+        {
+            try
+            {
+                StopUdp();
+                _udpServerHost = host ?? "";
+                _udp = new UdpClient(UdpLocalPort);
+                _udp.Client.SendTimeout = 1000;
+                _udpOn = true;
+                _udpRecvThread = new Thread(UdpRecvLoop) { IsBackground = true, Name = "SFM Relay UDP Recv" };
+                _udpRecvThread.Start();
+            }
+            catch { _udpOn = false; }
+        }
+
+        public static void StopUdp()
+        {
+            try
+            {
+                _udpOn = false;
+                var u = _udp;
+                _udp = null;
+                try { u?.Close(); } catch { }
+                while (UdpInbox.TryDequeue(out _)) { }
+                UdpRealtime.Clear();
+            }
+            catch { }
+        }
+
+        private static void UdpRecvLoop()
+        {
+            try
+            {
+                while (_udpOn && _udp != null)
+                {
+                    IPEndPoint remote = null;
+                    byte[] data;
+                    try { data = _udp.Receive(ref remote); }
+                    catch { break; }
+                    if (data == null || data.Length == 0) continue;
+                    try
+                    {
+                        string line = Encoding.UTF8.GetString(data);
+                        if (TryRealtimeKey(line, out var key))
+                            UdpRealtime[key] = line;
+                        else
+                            UdpInbox.Enqueue(line);
+                    }
+                    catch { }
+                }
+            }
+            catch { }
+        }
+
+        /// <summary>经 UDP 发送（高频数据）。包格式: uid\nroom\njson</summary>
+        public static bool SendUdp(string uid, string room, object o)
+        {
+            try
+            {
+                if (!_udpOn || _udp == null || string.IsNullOrEmpty(_udpServerHost) || o == null) return false;
+                string json = MiniJson.Serialize(o);
+                byte[] payload = Encoding.UTF8.GetBytes(uid + "\n" + (room ?? "") + "\n" + json);
+                _udp.Send(payload, payload.Length, _udpServerHost, UdpRemotePort);
+                return true;
+            }
+            catch { return false; }
+        }
+
+        /// <summary>取出收到的 UDP 数据（由 OnlineCore 轮询）。</summary>
+        public static bool TryDequeueUdp(out string line)
+        {
+            return UdpInbox.TryDequeue(out line);
+        }
+
+        /// <summary>取最新 UDP 实时数据（按键去重，保留最新）。</summary>
+        public static bool TryGetLatestUdp(string key, out string line)
+        {
+            return UdpRealtime.TryRemove(key, out line);
+        }
+
         public static bool Connected
         {
             get
@@ -97,6 +203,18 @@ namespace SFMOnline
                 if (o is Dictionary<string, object> message && message.TryGetValue("t", out var type))
                 {
                     string kind = type == null ? "" : type.ToString();
+                    // UDP 高频通道：state/motion/bone/action/npc/pos 走 UDP（减少 TCP 压力与 7000 封锁影响）
+                    if (UdpActive && (kind == "state_sync" || kind == "motion_sync" || kind == "bone_sync" ||
+                        kind == "action_sync" || kind == "npc_sync" || kind == "pos"))
+                    {
+                        string uid = _udpUid;
+                        string room = _udpRoom;
+                        if (uid.Length > 0)
+                        {
+                            SendUdp(uid, room, o);
+                            return;
+                        }
+                    }
                     if (string.Equals(kind, "state_sync", StringComparison.Ordinal))
                         Interlocked.Exchange(ref c.LatestState, o);
                     else if (string.Equals(kind, "motion_sync", StringComparison.Ordinal))
@@ -135,8 +253,34 @@ namespace SFMOnline
             });
         }
 
+        /// <summary>通知服务器本客户端的 UDP 源地址（经 TCP 安全通道登记）。</summary>
+        public static void RegisterUdp(string room)
+        {
+            try
+            {
+                SetUdpIdentity(PeerUidCache, room);
+                var local = _udp != null ? (System.Net.IPEndPoint)_udp.Client.LocalEndPoint : null;
+                Send(new Dictionary<string, object>
+                {
+                    ["t"] = "udp_register", ["ip"] = LocalIpCache, ["port"] = local != null ? local.Port : UdpLocalPort, ["room"] = room ?? ""
+                });
+            }
+            catch { }
+        }
+
+        private static string PeerUidCache = "";
+        private static string LocalIpCache = "";
+
+        /// <summary>连接成功后缓存 uid/本机 IP（由 OnlineCore 设置）。</summary>
+        public static void CacheIdentity(string uid, string localIp)
+        {
+            PeerUidCache = uid ?? "";
+            LocalIpCache = localIp ?? "";
+        }
+
         public static void Close()
         {
+            StopUdp();
             var c = Interlocked.Exchange(ref _connection, null);
             if (c == null) return;
             c.On = false;
