@@ -18,6 +18,7 @@ using ExposureUnnoticed2.Master.Skill;
 using ExposureUnnoticed2.Master.Stage;
 using ExposureUnnoticed2.Object3D.AdultGoods;
 using ExposureUnnoticed2.Object3D.NPC.Script;
+using ExposureUnnoticed2.Object3D.DropedCoat;
 using ExposureUnnoticed2.Object3D.PeeDecal;
 using ExposureUnnoticed2.Object3D.ScenePlops.Elevator;
 using ExposureUnnoticed2.Object3D.Player.Scripts;
@@ -803,6 +804,34 @@ namespace SFMOnline
         private string _relayHostUid = "";
         private List<Dictionary<string, object>> _relayPlayers = new List<Dictionary<string, object>>();
         private string _relayServerName = "";
+        private string _relayServerHost = "";
+        // ===== 房间模组同步（v1.0.10） =====
+        private List<Dictionary<string, object>> _hostModList = null;   // 房主模组清单
+        private List<string> _modNeedList = new List<string>();          // 需要下载的文件
+        private int _modDownloadIndex = 0;
+        private string _modDownloadError = "";
+        private bool _modPromptOpen = false;
+        private bool _modDownloading = false;
+        private bool _modPromptModeInstall = true;   // true=安装提示 false=下载中
+        private float _modReloadAfter = -1f;         // 下载完成后延迟重进游戏
+        private float _modDownloadStartedAt = -1f;   // 下载开始时间（超时保护）
+        // ===== 掉落道具同步（v1.0.10） =====
+        private class RemoteDrop
+        {
+            public string Type;      // DropItemType 名
+            public string Owner;     // 归属玩家 uid
+            public string OwnerName; // 归属玩家名
+            public Vector3 Pos;
+            public float CreatedAt;
+            public UnityEngine.GameObject Marker;
+        }
+        private readonly Dictionary<string, RemoteDrop> _remoteDrops = new Dictionary<string, RemoteDrop>();
+        private string _dropSig = "";
+        private float _lastDropScanAt = -999f;
+        private float _lastDropBroadcastAt = -999f;
+        private bool _dropAllowOthers = true;              // 是否允许他人拾取
+        private readonly HashSet<string> _dropAllowUids = new HashSet<string>();  // 指定允许的玩家（空=全部）
+        private float _lastDropPermBroadcastAt = -999f;
         private List<Dictionary<string, object>> _relayServerMods = new List<Dictionary<string, object>>();
         private string _relayAnnounceTitle = "";
         private string _relayAnnounceContent = "";
@@ -1075,7 +1104,35 @@ internal void Update()
         }
     }
     catch { }
-    SafeUpdate("native_input", UpdateNativeEditor);
+    
+    // 模组同步：下载完成延迟后自动重进游戏（退出当前世界回主菜单）
+    try
+    {
+        if (_modReloadAfter > 0f && Time.unscaledTime >= _modReloadAfter)
+        {
+            _modReloadAfter = -1f;
+            Toast("模组已更新，正在重进游戏...");
+            ReturnToTitle();
+        }
+        if (_modDownloading && Time.unscaledTime - _modDownloadStartedAt > 30f)
+        {
+            _modDownloading = false;
+            _modDownloadError = "下载超时";
+            AddRelayLine("[模组] 下载超时");
+        }
+    }
+    catch { }
+    // 掉落道具同步（v1.0.10）
+    try
+    {
+        UpdateDropSync();
+        if (_canInput && Input.GetKeyDown(KeyCode.F1))
+        {
+            CollectMyDrops();
+        }
+    }
+    catch { }
+SafeUpdate("native_input", UpdateNativeEditor);
     SafeUpdate("scene_guard", UpdateSceneTransitionGuard);
     _drain.Clear();
     int directPacketsLeft = 96;
@@ -3504,6 +3561,7 @@ private void ConnectToMasterCustom()
 private async void ConnectGameServerWithRetry(string host, int port)
 {
     _masterBusy = true;
+    _relayServerHost = host ?? "";
     for (int i = 1; i <= 3; i++)
     {
         ServerAPI.SetServerAddress(host, port);
@@ -4449,6 +4507,17 @@ private void UpdateRelayPoll()
         if (handled >= 6 && (Stopwatch.GetTimestamp() - pollStarted) / (double)Stopwatch.Frequency >= 0.0025)
             break;
     }
+    // UDP 数据面收包（高频同步消息）
+    try
+    {
+        int udpHandled = 0;
+        while (udpHandled < 32 && RelayTcp.TryDequeueUdp(out string udpLine))
+        {
+            if (!string.IsNullOrWhiteSpace(udpLine)) HandleRelayLine(udpLine);
+            udpHandled++;
+        }
+    }
+    catch { }
     if (_relayConnecting && (!RelayTcp.Connected || Time.unscaledTime - _relayConnectStartedAt > 15f))
     {
         RelayTcp.Close();
@@ -4488,6 +4557,14 @@ private void HandleRelayLine(string line)
             _relayServerName = JsonHelper.Str(m, "server_name");
             _relayOnline = JsonHelper.Int(m, "online");
             _relayMaxOnline = JsonHelper.Int(m, "max_online");
+            // 启动 UDP 数据面通道（高频同步走 UDP，缓解 TCP 压力与端口封锁）
+            try
+            {
+                RelayTcp.CacheIdentity(_authUid.ToString(), _relayServerHost);
+                RelayTcp.StartUdp(_relayServerHost);
+                RelayTcp.RegisterUdp("");
+            }
+            catch { }
             // 缓存服务器插件/mod 列表（供 Ext API 查询）
             _relayServerMods = JsonHelper.List(m, "mods");
             SFMOnline.Ext.SfmExtNet.SetServerMods(_relayServerMods);
@@ -4534,6 +4611,69 @@ private void HandleRelayLine(string line)
             }
             AddRelayLine(JsonHelper.Str(m, "name") + ": " + JsonHelper.Str(m, "d"));
         }
+        else if (t == "mod_list_push")
+        {
+            // 服务器推送房主模组清单 → 比对本地 → 有缺失则弹窗提示
+            try
+            {
+                var hostFiles = JsonHelper.List(m, "files");
+                if (hostFiles == null || hostFiles.Count == 0) return;
+                _hostModList = hostFiles;
+                _modNeedList = SFMOnline.ModLoader.DiffManifest(hostFiles);
+                if (_modNeedList.Count > 0)
+                {
+                    _modPromptOpen = true;
+                    _modPromptModeInstall = true;
+                    _modDownloadError = "";
+                    AddRelayLine("[模组] 房主有 " + _modNeedList.Count + " 个模组文件需要同步");
+                }
+                else
+                {
+                    AddRelayLine("[模组] 已拥有房主的全部模组");
+                }
+            }
+            catch (Exception ex) { PluginInfo.Warn("mod_list_push: " + ex.Message); }
+        }
+        else if (t == "mod_file_push")
+        {
+            // 服务器转发房主的文件数据 → 写入本地 → 继续下载下一个
+            try
+            {
+                string fname = JsonHelper.Str(m, "file");
+                string dataB64 = JsonHelper.Str(m, "data");
+                if (fname.Length > 0 && dataB64.Length > 0)
+                {
+                    byte[] data = Convert.FromBase64String(dataB64);
+                    SFMOnline.ModLoader.SaveDownloaded(fname, data);
+                    AddRelayLine("[模组] 已下载 " + fname);
+                }
+                _modDownloadIndex++;
+                if (_modDownloadIndex < _modNeedList.Count)
+                {
+                    RelayTcp.Send(new Dictionary<string, object> { ["t"] = "mod_file_req", ["file"] = _modNeedList[_modDownloadIndex] });
+                }
+                else
+                {
+                    _modDownloading = false;
+                    _modPromptModeInstall = false;
+                    _modReloadAfter = Time.unscaledTime + 1f;
+                    int loaded = SFMOnline.ModLoader.HotLoadAll(_modNeedList);
+                    AddRelayLine("[模组] 同步完成，加载 " + loaded + " 个新模组，即将重进游戏");
+                }
+            }
+            catch (Exception ex) { PluginInfo.Warn("mod_file_push: " + ex.Message); }
+        }
+        else if (t == "mod_err")
+        {
+            string em = JsonHelper.Str(m, "m");
+            _modDownloading = false;
+            _modDownloadError = em;
+            AddRelayLine("[模组] " + em);
+        }
+        else if (t == "ext_item_drop" || t == "ext_item_perm" || t == "ext_item_pick_ok" || t == "ext_item_pick_deny" || t == "ext_item_collect_all")
+        {
+            HandleRemoteDrop(t, m);
+        }
         else if (t == "room_created")
         {
             _relayRoomId = JsonHelper.Str(m, "room_id");
@@ -4543,6 +4683,18 @@ private void HandleRelayLine(string line)
             _relayHostUid = JsonHelper.Str(m, "host");
             _relayPlayers=JsonHelper.List(m,"players");_roomAllowGameBonuses=m.ContainsKey("allow_game_bonuses")&&JsonHelper.Int(m,"allow_game_bonuses")!=0;PrepareRelayAppearanceSync();
             AddRelayLine("[房间] 已创建 " + _relayRoomId + (_relayHostUid == _authUid.ToString() ? "（你是房主）" : ""));
+            // UDP 数据面：登记房间
+            try { RelayTcp.SetUdpIdentity(_authUid.ToString(), _relayRoomId); RelayTcp.RegisterUdp(_relayRoomId); } catch { }
+            // 房主上报模组清单（加入房间的玩家会自动比对并提示安装）
+            try
+            {
+                if (_relayHostUid == _authUid.ToString())
+                {
+                    var manifest = SFMOnline.ModLoader.CollectManifest();
+                    RelayTcp.Send(new Dictionary<string, object> { ["t"] = "mod_list", ["files"] = manifest });
+                }
+            }
+            catch (Exception ex) { PluginInfo.Warn("mod_list 上报: " + ex.Message); }
         }
         else if (t == "room_joined")
         {
@@ -4552,6 +4704,8 @@ private void HandleRelayLine(string line)
             _relayHostUid = JsonHelper.Str(m, "host");
             _relayPlayers=JsonHelper.List(m,"players");_roomAllowGameBonuses=m.ContainsKey("allow_game_bonuses")&&JsonHelper.Int(m,"allow_game_bonuses")!=0;PrepareRelayAppearanceSync();
             AddRelayLine("[房间] 已加入 " + _relayRoomId);
+            // UDP 数据面：登记房间（建房/入房后高频同步走 UDP）
+            try { RelayTcp.SetUdpIdentity(_authUid.ToString(), _relayRoomId); RelayTcp.RegisterUdp(_relayRoomId); } catch { }
         }
         else if (t == "room_player_join")
         {
@@ -5527,8 +5681,299 @@ private void ApplyResetAll()
     catch { }
 }
 
-[HideFromIl2Cpp]
-private void ForceResetAll()
+// ========== 掉落道具同步（v1.0.10） ==========
+        // 轮询游戏内掉落物（DroppedItemController），检测新增 → 广播；接收 → 标记；拾取 → 裁决
+        [HideFromIl2Cpp]
+        private void UpdateDropSync()
+        {
+            if (!_relayConnected || _relayRoomId.Length == 0 || !InGame) return;
+            float now = Time.unscaledTime;
+            // 1) 扫描本地掉落物（新增广播）
+            if (now - _lastDropScanAt >= 0.5f)
+            {
+                _lastDropScanAt = now;
+                try { ScanLocalDrops(); } catch { }
+            }
+            // 2) 定期广播拾取权限
+            if (now - _lastDropPermBroadcastAt >= 3f)
+            {
+                _lastDropPermBroadcastAt = now;
+                RelayTcp.Send(new Dictionary<string, object>
+                {
+                    ["t"] = "ext_item_perm", ["allow"] = _dropAllowOthers ? 1 : 0,
+                    ["uids"] = new List<object>(_dropAllowUids)
+                });
+            }
+            // 3) 渲染远程掉落标记（名字标签）
+            foreach (var kv in _remoteDrops)
+            {
+                var rd = kv.Value;
+                if (rd.Marker == null) rd.Marker = CreateDropMarker(rd);
+                if (rd.Marker != null)
+                    rd.Marker.transform.position = rd.Pos + Vector3.up * 0.9f;
+            }
+            // 4) 交互拾取检测（靠近远程标记按 F）
+            if (Input.GetKeyDown(KeyCode.F) || Input.GetKeyDown(KeyCode.E))
+            {
+                TryPickRemoteDrop();
+            }
+        }
+
+        [HideFromIl2Cpp]
+        private void ScanLocalDrops()
+        {
+            try
+            {
+                var controllers = UnityEngine.Object.FindObjectsOfType<DroppedItemController>();
+                if (controllers == null) return;
+                var sb = new System.Text.StringBuilder();
+                foreach (var dc in controllers)
+                {
+                    if (dc == null) continue;
+                    string type = "";
+                    try { type = dc.type.ToString(); } catch { }
+                    if (type.Length == 0 || type == "None") continue;
+                    var pos = dc.transform.position;
+                    sb.Append(type).Append('@').Append(Mathf.RoundToInt(pos.x)).Append(',').Append(Mathf.RoundToInt(pos.y)).Append(',').Append(Mathf.RoundToInt(pos.z)).Append(';');
+                }
+                string sig = sb.ToString();
+                if (sig == _dropSig) return;
+                _dropSig = sig;
+                // 广播本次扫描到的掉落物（去重：同类型同位置只发一次）
+                if (Time.unscaledTime - _lastDropBroadcastAt >= 0.8f)
+                {
+                    _lastDropBroadcastAt = Time.unscaledTime;
+                    var seen = new HashSet<string>();
+                    foreach (var dc in controllers)
+                    {
+                        if (dc == null) continue;
+                        string type = "";
+                        try { type = dc.type.ToString(); } catch { }
+                        if (type.Length == 0 || type == "None") continue;
+                        var pos = dc.transform.position;
+                        string key = type + "@" + Mathf.RoundToInt(pos.x) + "," + Mathf.RoundToInt(pos.y) + "," + Mathf.RoundToInt(pos.z);
+                        if (!seen.Add(key)) continue;
+                        RelayTcp.Send(new Dictionary<string, object>
+                        {
+                            ["t"] = "ext_item_drop", ["type"] = type,
+                            ["x"] = (float)Math.Round(pos.x, 2), ["y"] = (float)Math.Round(pos.y, 2), ["z"] = (float)Math.Round(pos.z, 2)
+                        });
+                    }
+                }
+            }
+            catch { }
+        }
+
+        [HideFromIl2Cpp]
+        private UnityEngine.GameObject CreateDropMarker(RemoteDrop rd)
+        {
+            try
+            {
+                var go = UnityEngine.GameObject.CreatePrimitive(UnityEngine.PrimitiveType.Cylinder);
+                go.name = "SFM_RemoteDrop_" + rd.Type;
+                go.transform.localScale = new Vector3(0.5f, 0.08f, 0.5f);
+                var r = go.GetComponent<Renderer>();
+                if (r != null) r.material.color = new Color(1f, 0.85f, 0.2f, 0.85f);
+                var collider = go.GetComponent<Collider>();
+                if (collider != null) collider.enabled = false;
+                // 名字标签（世界标记）
+                SFMOnline.Ext.SfmExtHud.CreateMarker("drop_" + rd.Type + "_" + rd.Owner, rd.Pos + Vector3.up * 1.1f,
+                    (rd.OwnerName.Length > 0 ? rd.OwnerName + " - " : "") + DropTypeName(rd.Type));
+                return go;
+            }
+            catch { return null; }
+        }
+
+        [HideFromIl2Cpp]
+        private void TryPickRemoteDrop()
+        {
+            try
+            {
+                if (_remoteDrops.Count == 0) return;
+                var self = PlayerFacade.Instance.pca.AvatorTransform.position;
+                string bestKey = null;
+                float bestD = 2.5f;
+                foreach (var kv in _remoteDrops)
+                {
+                    float d = Vector3.Distance(self, kv.Value.Pos);
+                    if (d <= bestD) { bestD = d; bestKey = kv.Key; }
+                }
+                if (bestKey == null) return;
+                var rd = _remoteDrops[bestKey];
+                // 请求拾取（服务器裁决权限）
+                RelayTcp.Send(new Dictionary<string, object>
+                {
+                    ["t"] = "ext_item_pick", ["type"] = rd.Type, ["owner"] = rd.Owner,
+                    ["x"] = rd.Pos.x, ["y"] = rd.Pos.y, ["z"] = rd.Pos.z
+                });
+            }
+            catch { }
+        }
+
+        [HideFromIl2Cpp]
+        private static string DropTypeName(string type)
+        {
+            switch (type)
+            {
+                case "Coat": return "外套";
+                case "Hoodie": return "卫衣";
+                case "Pants": return "内裤";
+                case "Bra": return "胸罩";
+                case "HandcuffKey": return "手铐钥匙";
+                case "VibeRemocon": return "振动遥控";
+                case "DildoFloor": return "跳蛋(地)";
+                case "DildoWall": return "跳蛋(墙)";
+                case "Basket": return "篮子";
+                default: return type;
+            }
+        }
+
+        // 处理远程掉落消息（在 HandleRelayLine 调用）
+        [HideFromIl2Cpp]
+        private void HandleRemoteDrop(string t, Dictionary<string, object> m)
+        {
+            try
+            {
+                if (t == "ext_item_drop")
+                {
+                    string type = JsonHelper.Str(m, "type");
+                    string owner = JsonHelper.Str(m, "uid");
+                    string ownerName = JsonHelper.Str(m, "name");
+                    if (type.Length == 0 || owner.Length == 0 || owner == _authUid.ToString()) return;
+                    var pos = new Vector3((float)JsonHelper.Double(m, "x"), (float)JsonHelper.Double(m, "y"), (float)JsonHelper.Double(m, "z"));
+                    string key = type + "@" + owner;
+                    // 更新或新建
+                    if (_remoteDrops.TryGetValue(key, out var rd))
+                    {
+                        rd.Pos = pos;
+                        rd.CreatedAt = Time.unscaledTime;
+                    }
+                    else
+                    {
+                        _remoteDrops[key] = new RemoteDrop { Type = type, Owner = owner, OwnerName = ownerName, Pos = pos, CreatedAt = Time.unscaledTime };
+                        AddRelayLine("[道具] " + (ownerName.Length > 0 ? ownerName : owner) + " 掉落了 " + DropTypeName(type));
+                    }
+                }
+                else if (t == "ext_item_perm")
+                {
+                    // 服务器广播的拾取权限（仅房主/归属者设置时有用；此处记录他人设置用于提示）
+                }
+                else if (t == "ext_item_pick_ok")
+                {
+                    // 拾取成功：本地 Collect 该类型
+                    string type = JsonHelper.Str(m, "type");
+                    string owner = JsonHelper.Str(m, "owner");
+                    if (type.Length > 0)
+                    {
+                        try
+                        {
+                            var dim = DroppedItemManager.Instance;
+                            if (dim != null)
+                            {
+                                // DropItemType 为游戏内部枚举，经字符串反射调用 Collect
+                                var mi = dim.GetType().GetMethod("Collect");
+                                if (mi != null)
+                                {
+                                    var enumType = mi.GetParameters().Length > 0 ? mi.GetParameters()[0].ParameterType : null;
+                                    if (enumType != null && enumType.IsEnum)
+                                        mi.Invoke(dim, new object[] { Enum.Parse(enumType, type, true) });
+                                }
+                            }
+                        }
+                        catch { }
+                        string key = type + "@" + owner;
+                        if (key != type + "@" + _authUid.ToString())
+                        {
+                            if (_remoteDrops.TryGetValue(key, out var rd))
+                            {
+                                if (rd.Marker != null) UnityEngine.Object.Destroy(rd.Marker);
+                                SFMOnline.Ext.SfmExtHud.RemoveText("drop_" + type + "_" + owner);
+                                _remoteDrops.Remove(key);
+                            }
+                        }
+                        AddRelayLine("[道具] 拾取了 " + DropTypeName(type));
+                    }
+                }
+                else if (t == "ext_item_pick_deny")
+                {
+                    string msg = JsonHelper.Str(m, "m");
+                    AddRelayLine("[道具] " + (msg.Length > 0 ? msg : "无权拾取该道具"));
+                }
+                else if (t == "ext_item_collect_all")
+                {
+                    // 某玩家回收了全部道具
+                    string owner = JsonHelper.Str(m, "uid");
+                    string ownerName = JsonHelper.Str(m, "name");
+                    if (owner.Length > 0)
+                    {
+                        foreach (var key in new List<string>(_remoteDrops.Keys))
+                        {
+                            if (_remoteDrops[key].Owner == owner)
+                            {
+                                if (_remoteDrops[key].Marker != null) UnityEngine.Object.Destroy(_remoteDrops[key].Marker);
+                                SFMOnline.Ext.SfmExtHud.RemoveText("drop_" + _remoteDrops[key].Type + "_" + owner);
+                                _remoteDrops.Remove(key);
+                            }
+                        }
+                        AddRelayLine("[道具] " + (ownerName.Length > 0 ? ownerName : owner) + " 回收了所有掉落道具");
+                    }
+                }
+            }
+            catch (Exception ex) { PluginInfo.Warn("drop sync: " + ex.Message); }
+        }
+
+        // F1：回收自己的全部掉落道具
+        [HideFromIl2Cpp]
+        private void CollectMyDrops()
+        {
+            try
+            {
+                var dim = DroppedItemManager.Instance;
+                if (dim != null) dim.CollectAll();
+                RelayTcp.Send(new Dictionary<string, object> { ["t"] = "ext_item_collect_all" });
+                AddRelayLine("[道具] 已回收全部掉落道具");
+                _dropSig = "";
+            }
+            catch (Exception ex) { PluginInfo.Warn("collect all: " + ex.Message); }
+        }
+
+// 模组同步完成后重进游戏：优先用游戏系统菜单的回标题入口（反射探测），
+        // 找不到就提示玩家手动重进（模组 DLL 已热加载，重进后正式生效）
+        [HideFromIl2Cpp]
+        private void ReturnToTitle()
+        {
+            try
+            {
+                var mgr = InGameManager.Instance;
+                if (mgr != null)
+                {
+                    foreach (var mn in new[] { "ReturnTitle", "BackToTitle", "GoTitle", "LeaveGame", "EndGame", "QuitGame" })
+                    {
+                        try
+                        {
+                            var mi = mgr.GetType().GetMethod(mn, System.Reflection.BindingFlags.Public | System.Reflection.BindingFlags.NonPublic | System.Reflection.BindingFlags.Instance);
+                            if (mi != null) { mi.Invoke(mgr, null); return; }
+                        }
+                        catch { }
+                    }
+                }
+            }
+            catch { }
+            try
+            {
+                var scenes = new[] { "Title", "TitleScene", "00_Title", "MainMenu" };
+                foreach (var s in scenes)
+                {
+                    try { UnityEngine.SceneManagement.SceneManager.LoadScene(s); return; }
+                    catch { }
+                }
+            }
+            catch { }
+            Toast("模组已更新，请按 Esc 回主菜单后重新进入游戏");
+        }
+
+        [HideFromIl2Cpp]
+        private void ForceResetAll()
 {
     ApplyResetAll();
     if (!_relayConnected && !Connected) return;
@@ -6085,20 +6530,19 @@ private List<NpcSyncPoint> CollectLocalNpcs()
                 var npc = nm.ExistNpcList[i];
                 if (npc == null || npc.NpcComponent == null) continue;
                 Vector3 p = npc.NpcComponent.transform.position;
-                float ds = Vector3.SqrMagnitude(p - self);
-                if (ds < 45f * 45f && Mathf.Abs(p.y - self.y) < 2.5f)
-                {
-                    int actionHash = 0;
-                    try { var npcAnimator = npc.NpcComponent.GetComponentInChildren<Animator>(); if (npcAnimator != null && npcAnimator.layerCount > 0) actionHash = npcAnimator.GetCurrentAnimatorStateInfo(0).shortNameHash; } catch { }
-                    int npcId = 0;
-                    try { npcId = npc.NpcComponent.id; } catch { }
-                    if (npcId <= 0) npcId = 100000 + i;
-                    list.Add(new NpcSyncPoint { Id = npcId, Pos = new Vector3(Mathf.Round(p.x * 50f) / 50f, Mathf.Round(p.y * 50f) / 50f, Mathf.Round(p.z * 50f) / 50f), RotY = npc.NpcComponent.transform.eulerAngles.y, ActionHash = actionHash, DistSq = ds });
-                }
+                // 全图采集（同 stage 的所有 NPC 都由该地图权威者同步，不再限 45 米）
+                int actionHash = 0;
+                try { var npcAnimator = npc.NpcComponent.GetComponentInChildren<Animator>(); if (npcAnimator != null && npcAnimator.layerCount > 0) actionHash = npcAnimator.GetCurrentAnimatorStateInfo(0).shortNameHash; } catch { }
+                int npcId = 0;
+                try { npcId = npc.NpcComponent.id; } catch { }
+                if (npcId <= 0) npcId = 100000 + i;
+                float dx = p.x - Mathf.Round(p.x * 50f) / 50f;
+                float dy = p.y - Mathf.Round(p.y * 50f) / 50f;
+                float dz = p.z - Mathf.Round(p.z * 50f) / 50f;
+                list.Add(new NpcSyncPoint { Id = npcId, Pos = p - new Vector3(dx, dy, dz), RotY = npc.NpcComponent.transform.eulerAngles.y, ActionHash = actionHash, DistSq = 0f });
             }
-            list.Sort((a, b) => a.DistSq.CompareTo(b.DistSq));
-            int npcCap = _relayPlayers.Count >= 8 ? 10 : (_relayPlayers.Count >= 5 ? 15 : 20);
-            if (list.Count > npcCap) list.RemoveRange(npcCap, list.Count - npcCap);
+            // 全图 NPC 上限保护（太多会导致包过大）
+            if (list.Count > 60) list.RemoveRange(60, list.Count - 60);
         }
     }
     catch { }
@@ -8119,6 +8563,75 @@ private void DrawDmPanel()
         }
 
 
+// 模组同步弹窗：安装提示（确定/取消）与下载进度（独立模态框，避免与其它 UI 重叠）
+[HideFromIl2Cpp]
+private void DrawModSyncPrompt()
+{
+    float w = 460f, h = _modDownloading ? 150f : 190f;
+    var rect = new Rect(Screen.width / 2f - w / 2f, Screen.height / 2f - h / 2f, w, h);
+    float x = rect.x + 14f;
+    float y = rect.y + 12f;
+    float iw = rect.width - 28f;
+    GUI.Box(rect, "");
+    GUI.Label(new Rect(x, y, iw, 24f), _modDownloading ? "正在同步房主模组..." : "⚠ 房主使用了模组，需要安装才能体验完整玩法");
+    y += 30f;
+    if (_modDownloading)
+    {
+        int total = Math.Max(1, _modNeedList.Count);
+        int done = Math.Min(total, _modDownloadIndex);
+        GUI.Label(new Rect(x, y, iw, 20f), string.Format("进度：{0}/{1}", done, total));
+        y += 26f;
+        var bar = new Rect(x, y, iw, 16f);
+        GUI.Box(bar, "");
+        GUI.DrawTexture(new Rect(bar.x, bar.y, bar.width * (done / (float)total), bar.height), WhiteTex());
+        y += 30f;
+        if (_modDownloadError.Length > 0)
+        {
+            GUI.Label(new Rect(x, y, iw, 20f), "失败：" + _modDownloadError);
+            y += 28f;
+        }
+        if (_canButton && GUI.Button(new Rect(x + iw - 80f, y, 80f, 24f), "取消"))
+        {
+            _modDownloading = false;
+            _modNeedList.Clear();
+            _modDownloadError = "";
+        }
+        return;
+    }
+    int shown = Math.Min(4, _modNeedList.Count);
+    float listH = shown * 18f + 4f;
+    GUI.Box(new Rect(x, y, iw, listH), "");
+    float ly = y + 3f;
+    for (int i = 0; i < shown; i++)
+    {
+        string n = _modNeedList[i];
+        if (n.Length > 42) n = n.Substring(0, 42) + "...";
+        GUI.Label(new Rect(x + 6f, ly, iw - 12f, 16f), n);
+        ly += 18f;
+    }
+    if (_modNeedList.Count > shown)
+        GUI.Label(new Rect(x + 6f, ly, iw - 12f, 16f), "... 共 " + _modNeedList.Count + " 个文件");
+    y += listH + 8f;
+    GUI.Label(new Rect(x, y, iw, 18f), "确定后自动下载并重进游戏；取消可直接进入（功能可能缺失）");
+    y += 26f;
+    if (_canButton && GUI.Button(new Rect(x, y, iw * 0.5f - 6f, 28f), "确定安装"))
+    {
+        _modPromptOpen = false;
+        _modDownloading = true;
+        _modDownloadError = "";
+        _modDownloadIndex = 0;
+        _modDownloadStartedAt = Time.unscaledTime;
+        AddRelayLine("[模组] 开始下载 " + _modNeedList.Count + " 个文件");
+        if (_modNeedList.Count > 0)
+            RelayTcp.Send(new Dictionary<string, object> { ["t"] = "mod_file_req", ["file"] = _modNeedList[0] });
+    }
+    if (_canButton && GUI.Button(new Rect(x + iw * 0.5f + 6f, y, iw * 0.5f - 6f, 28f), "取消（直接进入）"))
+    {
+        _modPromptOpen = false;
+        _modNeedList.Clear();
+    }
+}
+
 [HideFromIl2Cpp]
 private void DrawChatMenu()
 {
@@ -8449,6 +8962,12 @@ internal void OnGUI()
             PluginInfo.Warn("Chat menu error: " + ex);
             _showChatMenu = false;
         }
+    }
+    // 模组同步弹窗（安装提示 / 下载进度）
+    if (_modPromptOpen || _modDownloading)
+    {
+        try { DrawModSyncPrompt(); }
+        catch (Exception ex) { PluginInfo.Warn("mod prompt: " + ex.Message); }
     }
     if (!string.IsNullOrEmpty(_joinPwdPromptRoom))
     {
@@ -10097,6 +10616,49 @@ private void DrawServerConnectPanel()
                     _uiY += step;
                 }
 
+                // ---- 掉落道具拾取权限（v1.0.10） ----
+                if (_relayPlayers.Count > 0)
+                {
+                    if (_canButton && SButton(new Rect(_uiX, _uiY, _uiW, h),
+                        "掉落道具拾取：" + (_dropAllowOthers ? "允许他人拾取" : "禁止他人拾取")))
+                    {
+                        _dropAllowOthers = !_dropAllowOthers;
+                        _dropAllowUids.Clear();
+                        RelayTcp.Send(new Dictionary<string, object>
+                        {
+                            ["t"] = "ext_item_perm", ["allow"] = _dropAllowOthers ? 1 : 0,
+                            ["uids"] = new List<object>()
+                        });
+                    }
+                    _uiY += step;
+                    if (_dropAllowOthers)
+                    {
+                        if (_canLabel) SLabel(new Rect(_uiX, _uiY, _uiW, 16f), "指定允许拾取的玩家（勾选=允许）：");
+                        _uiY += 18f;
+                        foreach (var pl in _relayPlayers)
+                        {
+                            string pu = JsonHelper.Str(pl, "uid");
+                            string pn = JsonHelper.Str(pl, "name");
+                            if (pu.Length == 0 || pu == _authUid.ToString()) continue;
+                            bool checkedVal = _dropAllowUids.Contains(pu);
+                            bool newVal = GUI.Toggle(new Rect(_uiX, _uiY, 24f, 20f), checkedVal, "");
+                            if (newVal != checkedVal)
+                            {
+                                if (newVal) _dropAllowUids.Add(pu); else _dropAllowUids.Remove(pu);
+                                RelayTcp.Send(new Dictionary<string, object>
+                                {
+                                    ["t"] = "ext_item_perm", ["allow"] = 1,
+                                    ["uids"] = new List<object>(_dropAllowUids)
+                                });
+                            }
+                            if (_canLabel) SLabel(new Rect(_uiX + 28f, _uiY, _uiW - 28f, 20f), pn);
+                            _uiY += 22f;
+                        }
+                        if (_dropAllowUids.Count == 0)
+                            if (_canLabel) SLabel(new Rect(_uiX, _uiY, _uiW, 16f), "（未指定=所有人都可拾取）");
+                        _uiY += step;
+                    }
+                }
                 if (_toyLinkedTargets.Count > 0)
                 {
                     if (_canLabel) SLabel(new Rect(_uiX, _uiY, _uiW, h), "── 已授权控制 " + _toyLinkedTargets.Count + "/5 人 ──");
