@@ -50,10 +50,12 @@
 
 ## 📦 下载（Release）
 
-- [SFMOnline_Relay_Windows_v1.0.3.zip](release/SFMOnline_Relay_Windows_v1.0.3.zip)：Windows 一键版（解压后双击 启动联机服.bat）
-- [SFMOnline_Relay_Linux_v1.0.3.zip](release/SFMOnline_Relay_Linux_v1.0.3.zip)：Linux 一键版（解压后 ./start.sh）
-- [SFMOnline_Client_v1.0.9.zip](release/SFMOnline_Client_v1.0.9.zip)：客户端整合包（解压后把 BepInEx 内容放入游戏目录，或直接下载 client/SFMOnline_1.0.9.dll 放入 BepInEx/plugins/）。
+- [SFMOnline_Relay_Windows_v1.0.5.zip](release/SFMOnline_Relay_Windows_v1.0.5.zip)：Windows 一键版（解压后双击 启动联机服.bat）
+- [SFMOnline_Relay_Linux_v1.0.5.zip](release/SFMOnline_Relay_Linux_v1.0.5.zip)：Linux 一键版（解压后 ./start.sh）
+- [SFMOnline_Client_v1.0.10.zip](release/SFMOnline_Client_v1.0.10.zip)：客户端整合包（解压后把 BepInEx 内容放入游戏目录，或直接下载 client/SFMOnline_1.0.10.dll 放入 BepInEx/plugins/）。
 
+> **客户端v1.0.10 更新**：TCP+UDP 共联（建房后玩家高频同步走 UDP 8000，菜单/控制仍走 TCP，缓解 7000 端口封锁）；**房间模组自动同步**（房主模组清单→入房自动比对→缺失自动下载→热加载→自动重进游戏）；**NPC 按地图权威同步**（谁先进地图谁权威，全图 NPC 同步，权威离开自动转移）；**掉落道具同步**（他人掉落的道具可见、标玩家名、可拾取、权限控制、F1 一键回收）；**验证码发送多渠道**（Resend + QQ 自动切换，解决收不到问题）；**服务器插件后台页面扩展**。
+>
 > **客户端v1.0.9 更新**：修复房间聊天"未知消息类型"刷屏；修复服务器连 5 人即卡顿（广播预序列化+同步降频）；修复玩家原地卡死（控制器失联自动解除）；F10 菜单新增好友页签+红点；F11 聊天双页签（房间/总服）；客户端被修改自动下载官方版修复；新增 SFMOnlineMods 文件夹自动加载模组；开发文档重写。
 >
 > **客户端v1.0.8 更新**：客户端源码开源（取消字符串加密）；新增 `remote.*` 远程玩法控制 27 个函数（动作/振动/抽插/道具/脱衣/高潮/排尿/蹲爬坐/手铐/项圈/蒙眼/特效/传送，支持指定玩家与全员广播）；新增玩家查询（get_player_name/find_uid/get_players_info）；前置框架共 314 个函数，开放模组开发（见 docs/）。
