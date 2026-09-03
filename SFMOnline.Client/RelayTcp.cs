@@ -41,6 +41,7 @@ namespace SFMOnline
         public const int UdpRemotePort = 8000;
         private static UdpClient _udp;
         private static string _udpServerHost = "";
+        private static int _udpRemotePort = UdpRemotePort;
         private static volatile bool _udpOn;
         private static readonly ConcurrentQueue<string> UdpInbox = new ConcurrentQueue<string>();
         private static readonly ConcurrentDictionary<string, string> UdpRealtime = new ConcurrentDictionary<string, string>();
@@ -55,15 +56,52 @@ namespace SFMOnline
             _udpRoom = room ?? "";
         }
 
-        public static bool UdpActive => _udpOn && _udp != null;
+        public static bool UdpActive => _udpOn && _udp != null && _udpHealthy;
 
-        /// <summary>启动 UDP 通道（连接成功后调用；host 为服务器地址）。</summary>
-        public static void StartUdp(string host)
+        // UDP 健康探测：发 udp_ping 等 udp_pong 回执；连续失败标记不可用→回退 TCP
+        private static volatile bool _udpHealthy = true;
+        private static volatile float _lastUdpPongAt;
+        private static float _udpProbeAt = -999f;
+
+        /// <summary>发送 UDP 探测包并检测回执（由 OnlineCore 每 3 秒调用）。</summary>
+        public static bool UdpProbe()
+        {
+            float now = UnityEngine.Time.unscaledTime;
+            try
+            {
+                if (!_udpOn || _udp == null) { _udpHealthy = false; return false; }
+                if (now - _udpProbeAt < 3f)
+                {
+                    // 探测间隔内：有回执=健康；超 8 秒无回执=不可用
+                    if (_udpHealthy && now - _lastUdpPongAt > 8f) _udpHealthy = false;
+                    return _udpHealthy;
+                }
+                _udpProbeAt = now;
+                string uid = _udpUid;
+                string room = _udpRoom;
+                byte[] payload = Encoding.UTF8.GetBytes(uid + "\n" + room + "\n" + "{\"t\":\"udp_ping\"}");
+                try { _udp.Send(payload, payload.Length, _udpServerHost, _udpRemotePort); } catch { _udpHealthy = false; }
+                if (now - _lastUdpPongAt > 8f) _udpHealthy = false;
+                return _udpHealthy;
+            }
+            catch { _udpHealthy = false; return false; }
+        }
+
+        /// <summary>记录收到 UDP 数据（收到任何包视为通路健康）。</summary>
+        public static void NoteUdpAlive()
+        {
+            _lastUdpPongAt = UnityEngine.Time.unscaledTime;
+            _udpHealthy = true;
+        }
+
+        /// <summary>启动 UDP 通道（连接成功后调用；host 为服务器地址，udpPort 来自服务器 ok 响应）。</summary>
+        public static void StartUdp(string host, int udpPort = 0)
         {
             try
             {
                 StopUdp();
                 _udpServerHost = host ?? "";
+                _udpRemotePort = udpPort > 0 ? udpPort : UdpRemotePort;
                 _udp = new UdpClient(UdpLocalPort);
                 _udp.Client.SendTimeout = 1000;
                 _udpOn = true;
@@ -101,6 +139,7 @@ namespace SFMOnline
                     try
                     {
                         string line = Encoding.UTF8.GetString(data);
+                        NoteUdpAlive();
                         if (TryRealtimeKey(line, out var key))
                             UdpRealtime[key] = line;
                         else
@@ -120,7 +159,7 @@ namespace SFMOnline
                 if (!_udpOn || _udp == null || string.IsNullOrEmpty(_udpServerHost) || o == null) return false;
                 string json = MiniJson.Serialize(o);
                 byte[] payload = Encoding.UTF8.GetBytes(uid + "\n" + (room ?? "") + "\n" + json);
-                _udp.Send(payload, payload.Length, _udpServerHost, UdpRemotePort);
+                _udp.Send(payload, payload.Length, _udpServerHost, _udpRemotePort);
                 return true;
             }
             catch { return false; }
