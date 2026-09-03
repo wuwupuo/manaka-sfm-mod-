@@ -50,8 +50,8 @@ For detailed instructions, please refer to [Client Usage Guide](client/Client-Us
 
 ## 📦 Download (Release)
 
-- [SFMOnline_Relay_Windows_v1.0.5.zip](release/SFMOnline_Relay_Windows_v1.0.5.zip): Windows One-Click Version (Double-click to start the online server after extraction.bat)
-- [SFMOnline_Relay_Linux_v1.0.5.zip](release/SFMOnline_Relay_Linux_v1.0.5.zip): One-click Linux version (after decompression, run ./start.sh)
+- [SFMOnline_Relay_Windows_v1.0.7.zip](release/SFMOnline_Relay_Windows_v1.0.7.zip): Windows One-Click Version (Double-click to start the online server after extraction.bat)
+- [SFMOnline_Relay_Linux_v1.0.7.zip](release/SFMOnline_Relay_Linux_v1.0.7.zip): One-click Linux version (after decompression, run ./start.sh)
 - [SFMOnline_Client_v1.0.10.zip](release/SFMOnline_Client_v1.0.10.zip): Client integration package (after decompression, put the contents of BepInEx into the game directory, or directly download client/SFMOnline_1.0.10.dll and put it into BepInEx/plugins/).
 
 > **Client v1.0.10 Update**: TCP+UDP co-linking (in-room high-frequency sync via UDP 8000, menus/controls stay on TCP, bypasses port-7000 blocking); **automatic room mod sync** (host mod manifest → auto-compare on join → auto-download missing files → hot-load → auto-reload game); **per-map NPC authority sync** (first player in a map is authority, full-map NPC sync, authority transfers on leave); **drop item sync** (see others' dropped items with player-name labels, pick them up, permission control, F1 recall all); **multi-channel email captcha** (Resend + QQ auto-fallback); **plugin admin page extension**.
