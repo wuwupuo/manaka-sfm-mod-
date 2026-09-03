@@ -832,6 +832,14 @@ namespace SFMOnline
         private bool _dropAllowOthers = true;              // 是否允许他人拾取
         private readonly HashSet<string> _dropAllowUids = new HashSet<string>();  // 指定允许的玩家（空=全部）
         private float _lastDropPermBroadcastAt = -999f;
+        // ===== 面部表情同步（v1.0.10） =====
+        private int _lastFaceId = -999;
+        private int _lastFaceOverride = -999;
+        private float _lastFaceSyncAt = -999f;
+        private readonly Dictionary<string, int> _ghostFaceId = new Dictionary<string, int>();
+        private readonly Dictionary<string, int> _ghostFaceOverride = new Dictionary<string, int>();
+        private readonly Dictionary<string, float> _relayGhostRttMs = new Dictionary<string, float>();
+        private bool _udpFallbackWarned = false;
         private List<Dictionary<string, object>> _relayServerMods = new List<Dictionary<string, object>>();
         private string _relayAnnounceTitle = "";
         private string _relayAnnounceContent = "";
@@ -1129,6 +1137,18 @@ internal void Update()
         if (_canInput && Input.GetKeyDown(KeyCode.F1))
         {
             CollectMyDrops();
+        }
+        UpdateFaceSync();
+    }
+    catch { }
+    // UDP 健康探测：不通自动回退 TCP（保证人人可见）
+    try
+    {
+        bool udpHealthyNow = RelayTcp.UdpProbe();
+        if (!udpHealthyNow && !_udpFallbackWarned)
+        {
+            _udpFallbackWarned = true;
+            AddRelayLine("[网络] UDP 数据通道不可用，已回退 TCP 同步（可正常游玩）");
         }
     }
     catch { }
@@ -2684,10 +2704,12 @@ private void SendRelayMotion()
         ["lms"] = (float)Math.Round(_cachedAnimatorLocomotionSpeed, 3),
         ["sx"] = (float)Math.Round(_cachedAnimatorStrafeX, 3),
         ["sy"] = (float)Math.Round(_cachedAnimatorStrafeY, 3),
-        ["act"] = _cachedMotionAction, ["hash"] = _cachedMotionHash
+        ["act"] = _cachedMotionAction, ["hash"] = _cachedMotionHash,
+        ["ts"] = (float)Math.Round(Time.unscaledTime * 1000f),  // 毫秒时间戳（接收端延迟补偿）
+        ["stage"] = CurrentStageInt()  // 地图（接收端可见性/位置表用）
     };
-    // 每 0.2 秒及开始/停止/换动作时附带一次坐标；平时仍只发送速度和状态字段。
-    if (stateChanged || now - _lastRelayMotionPosAt >= 0.2f)
+    // 位置：UDP 模式每包都带（高频位置=更平滑）；TCP 模式每 0.2 秒及状态变化时带
+    if (RelayTcp.UdpActive || stateChanged || now - _lastRelayMotionPosAt >= 0.2f)
     {
         _lastRelayMotionPosAt = now;
         var avatar = PlayerFacade.Instance.pca.AvatorTransform;
@@ -4558,10 +4580,12 @@ private void HandleRelayLine(string line)
             _relayOnline = JsonHelper.Int(m, "online");
             _relayMaxOnline = JsonHelper.Int(m, "max_online");
             // 启动 UDP 数据面通道（高频同步走 UDP，缓解 TCP 压力与端口封锁）
+            // 端口由服务器 ok 响应下发（udp_port），不同服务器可配置不同端口
             try
             {
+                int udpPort = JsonHelper.Int(m, "udp_port", 0);
                 RelayTcp.CacheIdentity(_authUid.ToString(), _relayServerHost);
-                RelayTcp.StartUdp(_relayServerHost);
+                RelayTcp.StartUdp(_relayServerHost, udpPort);
                 RelayTcp.RegisterUdp("");
             }
             catch { }
@@ -4673,6 +4697,10 @@ private void HandleRelayLine(string line)
         else if (t == "ext_item_drop" || t == "ext_item_perm" || t == "ext_item_pick_ok" || t == "ext_item_pick_deny" || t == "ext_item_collect_all")
         {
             HandleRemoteDrop(t, m);
+        }
+        else if (t == "face_sync")
+        {
+            HandleFaceSync(m, JsonHelper.Str(m, "uid"));
         }
         else if (t == "room_created")
         {
@@ -5680,6 +5708,108 @@ private void ApplyResetAll()
     }
     catch { }
 }
+
+// ========== 面部表情同步（v1.0.10） ==========
+        // 本地读取 PlayerFaceController 的 FaceId/OverrideFaceId（覆盖表情=自定义初始表情）
+        [HideFromIl2Cpp]
+        private bool GetLocalFaceIds(out int faceId, out int overrideId)
+        {
+            faceId = -1;
+            overrideId = -1;
+            try
+            {
+                var fac = PlayerFacade.Instance;
+                if (fac == null || fac.pca == null) return false;
+                // pca 即 PlayerClassAccessor；PlayerFaceController.FaceId 为静态单例（当前角色表情）
+                faceId = PlayerFaceController.FaceId;
+                try
+                {
+                    var pfc = fac.pca.PlayerFaceController;
+                    if (pfc != null) overrideId = pfc.OverrideFaceId;
+                }
+                catch { }
+                return true;
+            }
+            catch { return false; }
+        }
+
+        // 每帧：表情变化时广播（进房首次也发）
+        [HideFromIl2Cpp]
+        private void UpdateFaceSync()
+        {
+            if (!_relayConnected || _relayRoomId.Length == 0 || !InGame) return;
+            if (GetLocalFaceIds(out int fid, out int oid))
+            {
+                if (fid == _lastFaceId && oid == _lastFaceOverride)
+                    return;
+                _lastFaceId = fid;
+                _lastFaceOverride = oid;
+                if (Time.unscaledTime - _lastFaceSyncAt < 0.3f) return; // 防抖
+                _lastFaceSyncAt = Time.unscaledTime;
+                RelayTcp.Send(new Dictionary<string, object>
+                {
+                    ["t"] = "face_sync", ["f"] = fid, ["o"] = oid
+                });
+            }
+        }
+
+        // 接收：应用表情到 ghost（找到 ghost 的 PlayerFaceController 或 AnimationManager）
+        [HideFromIl2Cpp]
+        private void HandleFaceSync(Dictionary<string, object> m, string fromUid)
+        {
+            try
+            {
+                int fid = JsonHelper.Int(m, "f", -1);
+                int oid = JsonHelper.Int(m, "o", -1);
+                if (fromUid.Length == 0) return;
+                _ghostFaceId[fromUid] = fid;
+                _ghostFaceOverride[fromUid] = oid;
+                ApplyGhostFace(fromUid, fid, oid);
+            }
+            catch { }
+        }
+
+        [HideFromIl2Cpp]
+        private void ApplyGhostFace(string uid, int fid, int oid)
+        {
+            try
+            {
+                GameObject root = null;
+                if (_relayGhosts.TryGetValue(uid, out var g) && g != null && g.Root != null)
+                    root = g.Root;
+                if (root == null)
+                {
+                    root = _relayConnected ? GetRelayGhostRoot(uid) : (GetGhostRootByUid(uid));
+                }
+                if (root == null) return;
+                // 优先找 PlayerFaceController（ghost 克隆体通常保留运行时组件）
+                var pfc = root.GetComponentInChildren<PlayerFaceController>();
+                if (pfc != null)
+                {
+                    // FaceId 是静态单例（跟随当前激活角色），OverrideFaceId 是实例（自定义初始表情）
+                    if (oid >= 0) pfc.OverrideFaceId = oid;
+                    return;
+                }
+                // 备用：设置表情动画层（FaceLayer 为静态，走类型访问）
+                var am = root.GetComponentInChildren<PlayerAnimationManager>();
+                if (am != null && fid >= 0)
+                {
+                    try { PlayerAnimationManager.FaceLayer = fid; } catch { }
+                }
+            }
+            catch { }
+        }
+
+        [HideFromIl2Cpp]
+        private GameObject GetRelayGhostRoot(string uid)
+        {
+            try
+            {
+                if (_relayGhosts.TryGetValue(uid, out var g)) return g != null ? g.Root : null;
+            }
+            catch { }
+            return null;
+        }
 
 // ========== 掉落道具同步（v1.0.10） ==========
         // 轮询游戏内掉落物（DroppedItemController），检测新增 → 广播；接收 → 标记；拾取 → 裁决
@@ -6818,6 +6948,29 @@ private void ApplyRelayMotion(string uid, Dictionary<string, object> m)
         : Vector3.zero;
     float groundY = (float)JsonHelper.Double(m, "gy", 0);
     _relayGroundY[uid] = groundY;
+    // 高频 motion 带坐标时同步更新位置表（否则 ghost 依赖 1-2s 一次的 pos 包才会出现→看不到人）
+    if (m.ContainsKey("x") && m.ContainsKey("y") && m.ContainsKey("z"))
+    {
+        _relayPositions[uid] = new RelayPos
+        {
+            X = (float)JsonHelper.Double(m, "x"), Y = (float)JsonHelper.Double(m, "y"), Z = (float)JsonHelper.Double(m, "z"),
+            RotY = (float)JsonHelper.Double(m, "ry"), Stage = JsonHelper.Int(m, "stage", -1)
+        };
+    }
+    else if (!_relayPositions.ContainsKey(uid))
+    {
+        // 无坐标也无 pos 记录：用 ghost 当前位置兜底（至少让它出现）
+        if (_relayGhosts.TryGetValue(uid, out var eg) && eg != null && eg.Root != null)
+            _relayPositions[uid] = new RelayPos { X = eg.Root.transform.position.x, Y = eg.Root.transform.position.y, Z = eg.Root.transform.position.z, RotY = eg.Root.transform.eulerAngles.y, Stage = CurrentStageInt() };
+    }
+    // 发送端时间戳（毫秒）→ 网络延迟补偿（tick + lerp 方案）
+    float sendTsMs = (float)JsonHelper.Double(m, "ts", 0);
+    if (sendTsMs > 0)
+    {
+        float rtt = (Time.unscaledTime * 1000f) - sendTsMs;
+        _relayGhostRttMs[uid] = Mathf.Clamp(rtt, 0f, 500f);
+        if (ghost != null) ghost.NetworkDelaySec = Mathf.Clamp(rtt * 0.001f, 0f, 0.5f);
+    }
     ghost.SetMotionDetailed(velocity, (float)JsonHelper.Double(m, "ry"), JsonHelper.Int(m, "moving") != 0,
         JsonHelper.Int(m, "crouch") != 0, JsonHelper.Int(m, "strafe") != 0, JsonHelper.Int(m, "dash") != 0,
         JsonHelper.Int(m, "act", -1), JsonHelper.Int(m, "hash"),
@@ -10203,6 +10356,22 @@ private void DrawHud()
         string loc = "坐标 " + FmtCoord(t.x) + ", " + FmtCoord(t.y) + ", " + FmtCoord(t.z)
             + " | 地图 " + StageName(stage) + (floor >= 0 ? " | " + floor + " 层" : "");
         GUI.Label(new Rect(8, y, 620, 18), loc);
+        // 大地图浮窗（屏幕右侧独立显示，不遮挡菜单/玩家列表）
+        if (_showMap)
+        {
+            float mapSize = Mathf.Min(430f, Screen.width * 0.35f);
+            float mx = Screen.width - mapSize - 12f;
+            float my = 42f;
+            try
+            {
+                if (_canButton && GUI.Button(new Rect(mx, my - 26f, 86f, 22f), S("收起大地图")))
+                {
+                    _showMap = false;
+                }
+                DrawMap(mx, my, mapSize);
+            }
+            catch { }
+        }
     }
 }
 
@@ -10295,19 +10464,14 @@ private void DrawServerConnectPanel()
         _uiY += step;
 
         float half = (_uiW - 6f) * 0.5f;
-        if (_canButton && SButton(new Rect(_uiX, _uiY, half, h), _showMap ? "收起大地图" : "打开大地图"))
+        if (_canButton && SButton(new Rect(_uiX, _uiY, half, h), _showMap ? "收起大地图" : "打开大地图（右侧）"))
         {
             _showMap = !_showMap;
             if (_showMap) { _mapHasStart = false; _viewStage = CurrentStageInt(); }
+            if (_showMap && _showMenu) { _showMenu = false; _focusedField = ""; GUI.FocusControl(""); }
         }
         if (IsHosting && _canButton && SButton(new Rect(_uiX + half + 6f, _uiY, half, h), "召集所有玩家到房主")) SendFollowFromLocal();
         _uiY += step;
-        if (_showMap)
-        {
-            float mapSize = Mathf.Min(_uiW, 430f);
-            DrawMap(_uiX, _uiY, mapSize);
-            _uiY += mapSize + step;
-        }
 
         if (_canLabel) SLabel(new Rect(_uiX, _uiY, _uiW, h), "── 房间聊天（可靠优先）──");
         _uiY += step;
@@ -10555,10 +10719,11 @@ private void DrawServerConnectPanel()
                 if (_canLabel) SLabel(new Rect(_uiX, _uiY, _uiW, h), "房间 " + _relayRoomId + (isHost ? "（房主）" : ""));
                 _uiY += step;
                 float roomCol = (_uiW - 6f) * 0.5f;
-                if (_canButton && SButton(new Rect(_uiX, _uiY, roomCol, h), _showMap ? "收起大地图" : "打开大地图"))
+                if (_canButton && SButton(new Rect(_uiX, _uiY, roomCol, h), _showMap ? "收起大地图" : "打开大地图（右侧）"))
                 {
                     _showMap = !_showMap;
                     if (_showMap) { _mapHasStart = false; _viewStage = CurrentStageInt(); }
+                    if (_showMap && _showMenu) { _showMenu = false; _focusedField = ""; GUI.FocusControl(""); }
                 }
                 if (_canButton && SButton(new Rect(_uiX + roomCol + 6f, _uiY, roomCol, h), "离开房间"))
                 {
@@ -13111,6 +13276,7 @@ private static string StageName(int stage)
             public int BoneMapCount => _boneMap.Count;
             public float CreatedTime;
             public bool HasMarker;
+            public float NetworkDelaySec;   // 网络延迟（秒），用于预测补偿
             private Vector3 _avatarOffset;
             private Transform _modelRoot;
             private readonly List<Renderer> _renderers = new List<Renderer>();
@@ -14162,7 +14328,8 @@ private static string StageName(int stage)
                             ? (_motionMoving ? _motionVelocity : Vector3.zero)
                             : _estimatedVelocity;
                         predictionVelocity.y = 0f;
-                        Vector3 predicted = _targetPosition + predictionVelocity * age;
+                        // 延迟补偿：把位置推进到"发送者当前时刻"（多推 RTT 距离），近似 L4D 客户端预测
+                        Vector3 predicted = _targetPosition + predictionVelocity * (age + NetworkDelaySec);
                         predicted += new Vector3(0f, _floorCorrectionY, 0f);
                         Root.transform.position = Vector3.Lerp(Root.transform.position, predicted, t);
                         float y = Mathf.LerpAngle(Root.transform.eulerAngles.y, _targetRotationY, t);
