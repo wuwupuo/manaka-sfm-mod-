@@ -30,7 +30,7 @@
 ## 🚀 客户端使用教程
 
 1. 安装整合包要求的 BepInEx 环境（游戏本体）。
-2. 客户端**已开源**：源码见 [SFMOnline.Client/](SFMOnline.Client/)（取消加密，可直接编译）；不想自己编译可从 [client/SFMOnline_1.0.10.dll](client/SFMOnline_1.0.10.dll) 下载编译好的 DLL，重命名为 `SFMOnline.dll` 放到 `BepInEx/plugins/`。
+2. 客户端**已开源**：源码见 [SFMOnline.Client/](SFMOnline.Client/)（取消加密，可直接编译）；不想自己编译可从 [client/SFMOnline_1.0.8.dll](client/SFMOnline_1.0.8.dll) 下载编译好的 DLL，重命名为 `SFMOnline.dll` 放到 `BepInEx/plugins/`。
 3. 启动游戏：`F10` 联机菜单、`F12` 普通菜单、`F11` 聊天。
 4. 登录后：`F10` → 总服务器列表选择服务器 → 房间页创建/加入房间；或局域网/内网穿透房间。
 5. 游戏内按 `Alt+F3` 随时强制恢复所有控制状态。
@@ -50,8 +50,8 @@
 
 ## 📦 下载（Release）
 
-- [SFMOnline_Relay_Windows_v1.0.6.zip](release/SFMOnline_Relay_Windows_v1.0.6.zip)：Windows 一键版（解压后双击 启动联机服.bat）
-- [SFMOnline_Relay_Linux_v1.0.6.zip](release/SFMOnline_Relay_Linux_v1.0.6.zip)：Linux 一键版（解压后 ./start.sh）
+- [SFMOnline_Relay_Windows_v1.0.5.zip](release/SFMOnline_Relay_Windows_v1.0.5.zip)：Windows 一键版（解压后双击 启动联机服.bat）
+- [SFMOnline_Relay_Linux_v1.0.5.zip](release/SFMOnline_Relay_Linux_v1.0.5.zip)：Linux 一键版（解压后 ./start.sh）
 - [SFMOnline_Client_v1.0.10.zip](release/SFMOnline_Client_v1.0.10.zip)：客户端整合包（解压后把 BepInEx 内容放入游戏目录，或直接下载 client/SFMOnline_1.0.10.dll 放入 BepInEx/plugins/）。
 
 > **客户端v1.0.10 更新**：TCP+UDP 共联（建房后玩家高频同步走 UDP 8000，菜单/控制仍走 TCP，缓解 7000 端口封锁）；**房间模组自动同步**（房主模组清单→入房自动比对→缺失自动下载→热加载→自动重进游戏）；**NPC 按地图权威同步**（谁先进地图谁权威，全图 NPC 同步，权威离开自动转移）；**掉落道具同步**（他人掉落的道具可见、标玩家名、可拾取、权限控制、F1 一键回收）；**验证码发送多渠道**（Resend + QQ 自动切换，解决收不到问题）；**服务器插件后台页面扩展**。
