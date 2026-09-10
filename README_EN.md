@@ -50,8 +50,8 @@ For detailed instructions, please refer to [Client Usage Guide](client/Client-Us
 
 ## 📦 Download (Release)
 
-- [SFMOnline_Relay_Windows_v1.0.7.zip](release/SFMOnline_Relay_Windows_v1.0.7.zip): Windows One-Click Version (Double-click to start the online server after extraction.bat)
-- [SFMOnline_Relay_Linux_v1.0.7.zip](release/SFMOnline_Relay_Linux_v1.0.7.zip): One-click Linux version (after decompression, run ./start.sh)
+- [SFMOnline_Relay_Windows_v1.0.8.zip](release/SFMOnline_Relay_Windows_v1.0.8.zip): Windows One-Click Version (Double-click to start the online server after extraction.bat)
+- [SFMOnline_Relay_Linux_v1.0.8.zip](release/SFMOnline_Relay_Linux_v1.0.8.zip): One-click Linux version (after decompression, run ./start.sh)
 - [SFMOnline_Client_v1.0.12.zip](release/SFMOnline_Client_v1.0.12.zip): Client integration package (after decompression, put the contents of BepInEx into the game directory, or directly download client/SFMOnline_1.0.12.dll and put it into BepInEx/plugins/).
 
 > **Client v1.0.12 Update**: **Fixed "TCP port unreachable" false alarm** (connect timeout 6s → 20s, slow handshakes on international routes no longer misreported); **automatic port fallback** (when the main port 7000 is QoS-blocked, the client automatically tries alternate ports 8443/8090; the server listens on them); friendlier connection messages.
