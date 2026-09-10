@@ -50,8 +50,8 @@
 
 ## 📦 下载（Release）
 
-- [SFMOnline_Relay_Windows_v1.0.7.zip](release/SFMOnline_Relay_Windows_v1.0.7.zip)：Windows 一键版（解压后双击 启动联机服.bat）
-- [SFMOnline_Relay_Linux_v1.0.7.zip](release/SFMOnline_Relay_Linux_v1.0.7.zip)：Linux 一键版（解压后 ./start.sh）
+- [SFMOnline_Relay_Windows_v1.0.8.zip](release/SFMOnline_Relay_Windows_v1.0.8.zip)：Windows 一键版（解压后双击 启动联机服.bat）
+- [SFMOnline_Relay_Linux_v1.0.8.zip](release/SFMOnline_Relay_Linux_v1.0.8.zip)：Linux 一键版（解压后 ./start.sh）
 - [SFMOnline_Client_v1.0.12.zip](release/SFMOnline_Client_v1.0.12.zip)：客户端整合包（解压后把 BepInEx 内容放入游戏目录，或直接下载 client/SFMOnline_1.0.12.dll 放入 BepInEx/plugins/）。
 
 > **客户端v1.0.12 更新**：**修复"TCP 端口不可达"误报**（连接超时 6 秒 → 20 秒，大陆→香港等国际线路晚高峰握手慢不再误报）；**端口自动回退**（主端口 7000 被部分网络 QoS/封锁时自动尝试备用端口 8443/8090，服务器已同步监听）；连接提示更友好（显示尝试过程与解决建议）。
