@@ -500,7 +500,16 @@ def state():
             "pubchat": pubchat[-100:],
             "room_chat_archive": room_chat_archive,
             "chat_mutes": chat_mutes,
+            "plugin_pages": admin_pages_render_all(),
         }
+
+def admin_pages_render_all():
+    """渲染所有插件注册的后台页面（供 admin.py 的 plugins tab 读取）。"""
+    try:
+        return [{"id": k, "title": v["title"], "plugin": v["name"],
+                 "html": admin_pages_render(k, "zh")} for k, v in _ADMIN_PAGES.items()]
+    except Exception:
+        return []
 
 def archive_room_chat(rid, room):
     chat = list((room or {}).get("chat", []))[-100:]
@@ -551,6 +560,8 @@ def apply_command(c):
         rid = str(c["delete_room"])
         archive_room_chat(rid, rooms.get(rid))
         rooms.pop(rid, None)
+        mod_room_clean(rid)
+        item_room_clean(rid)
         for u, cc in list(clients.items()):
             if cc.get("room") == rid:
                 cc["room"] = ""
@@ -804,6 +815,37 @@ class Handler(socketserver.BaseRequestHandler):
         if t == "captcha" and not self.allow_rate("captcha", 10, 60.0):
             send(self.request, {"t": "err", "m": "验证码请求过于频繁"})
             return
+        if t == "udp_register":
+            # 客户端经 TCP 上报其 UDP 源地址与房间，登记进 UDP 中继表
+            # m: {"t":"udp_register","ip":"x.x.x.x","port":N,"room":"rid"}
+            try:
+                uip = str(m.get("ip", ""))
+                uport = int(m.get("port", 0))
+                rid = str(m.get("room", ""))
+                if uip and uport > 0:
+                    import socket as _s
+                    try:
+                        uip = _s.gethostbyname(uip)
+                    except Exception:
+                        pass
+                    udp_register_peer(self.uid, (uip, uport), rid)
+                    send(self.request, {"t": "udp_ok", "port": UDP_PORT})
+            except Exception:
+                pass
+            return
+        if t == "mod_list" or t == "mod_file_req" or t == "mod_file_send":
+            mod_handle(clients.get(self.uid, {}), m)
+            return
+        if t == "ext_item_drop" or t == "ext_item_perm" or t == "ext_item_pick" or t == "ext_item_collect_all":
+            item_handle(clients.get(self.uid, {}), m)
+            return
+        if t == "face_sync":
+            rid = clients.get(self.uid, {}).get("room", "")
+            if rid:
+                m = dict(m)
+                m["uid"] = self.uid
+                broadcast_room(rid, m, self.uid)
+            return
         if t == "ping":
             send(self.request, {"t": "pong", "online": len(clients), "max_online": MAX_ONLINE, "rooms": room_summary(), "server_name": server_name})
         elif t == "pub_chat":
@@ -845,7 +887,7 @@ class Handler(socketserver.BaseRequestHandler):
             stamp = time.time()
             room = rooms.get(rid, {})
             player_count = len(room.get("players", {}))
-            motion_hz = 12.0 if player_count <= 3 else (8.0 if player_count <= 5 else (6.0 if player_count <= 7 else 5.0))
+            motion_hz = 20.0 if player_count <= 3 else (15.0 if player_count <= 5 else (12.0 if player_count <= 7 else 10.0))
             signature = (
                 1 if m.get("moving") else 0,
                 1 if m.get("crouch") else 0,
@@ -884,12 +926,20 @@ class Handler(socketserver.BaseRequestHandler):
                     payload["x"] = round(max(-100000.0, min(100000.0, float(m.get("x", 0)))), 3)
                     payload["y"] = round(max(-100000.0, min(100000.0, float(m.get("y", 0)))), 3)
                     payload["z"] = round(max(-100000.0, min(100000.0, float(m.get("z", 0)))), 3)
+                try:
+                    payload["ts"] = float(m.get("ts", 0))
+                except Exception:
+                    pass
+                try:
+                    payload["stage"] = int(m.get("stage", -1))
+                except Exception:
+                    pass
                 broadcast_room(rid, payload, self.uid)
         elif t == "bone_sync":
             rid = clients.get(self.uid, {}).get("room", "")
             bc = clients.get(self.uid)
             bone_stamp = time.time()
-            if rid and bc and bone_stamp - float(bc.get("last_bone_at", 0.0)) >= 1.0 / 4.0:
+            if rid and bc and bone_stamp - float(bc.get("last_bone_at", 0.0)) >= 1.0 / 6.0:
                 bc["last_bone_at"] = bone_stamp
                 broadcast_room(rid, {"t": "bone_sync", "uid": self.uid, "slot": int(m.get("slot", 0)), "q": m.get("q", [])}, self.uid)
         elif t == "action_sync":
@@ -1036,7 +1086,7 @@ class Handler(socketserver.BaseRequestHandler):
         self.uid = uid
         self.name = name
         self.key = key
-        send_plain(self.request, {"t": "ok", "online": len(clients), "max_online": MAX_ONLINE, "server_name": server_name, "server_desc": server_desc, "announcement": announcement, "pubchat": pubchat[-50:], "mods": plugin_list(), "key": base64.b64encode(key).decode()})
+        send_plain(self.request, {"t": "ok", "online": len(clients), "max_online": MAX_ONLINE, "server_name": server_name, "server_desc": server_desc, "announcement": announcement, "pubchat": pubchat[-50:], "mods": plugin_list(), "udp_port": UDP_PORT, "key": base64.b64encode(key).decode()})
         broadcast_all({"t": "presence", "uid": uid, "name": name, "online": len(clients)}, uid)
 
     def do_pub_chat(self, m):
@@ -1121,6 +1171,9 @@ class Handler(socketserver.BaseRequestHandler):
             clients[self.uid]["room"] = rid
             r["players"][self.uid] = clients[self.uid]["name"]
             r["last"] = now()
+        udp_sync_room(self.uid, rid)
+        # 入房后推送房主模组清单（若房主开房时上报过）
+        mod_push_list_to(self.uid, rid)
         players = [{"uid": u, "name": n} for u, n in r["players"].items()]
         send(self.request, {"t": "room_joined", "room_id": rid, "host": r.get("host", ""), "players": players, "allow_game_bonuses": r.get("allow_game_bonuses", 0)})
         broadcast_room(rid, {"t": "room_player_join", "uid": self.uid, "name": self.name, "players": players}, self.uid)
@@ -1375,6 +1428,7 @@ class Handler(socketserver.BaseRequestHandler):
     def leave(self):
         if not self.uid:
             return
+        udp_unregister_peer(self.uid)
         c = clients.get(self.uid)
         if not c or c.get("sock") is not self.request:
             return
@@ -1384,6 +1438,8 @@ class Handler(socketserver.BaseRequestHandler):
             if r.get("host") == self.uid:
                 archive_room_chat(rid, r)
                 rooms.pop(rid, None)
+                mod_room_clean(rid)
+                item_room_clean(rid)
                 try:
                     plugin_call_all("on_room_destroy", rid, r)
                 except Exception:
@@ -1497,11 +1553,39 @@ def _make_plugin_api(name):
         "send_to_plugin": lambda target, op, data=None: plugin_send_to(name, target, op, data),
         "broadcast_event": lambda evt, data=None, exclude=None: plugin_broadcast_event(evt, data, exclude),
         "list_plugins": lambda: list(PLUGINS.keys()),
+        # 后台页面扩展（v1.0.10）：插件可注册网页后台 tab
+        #   admin_page("mypage", "我的页面", lambda: "<h3>内容</h3>")
+        "admin_page": lambda tab_id, title, html_fn: admin_page_register(name, tab_id, title, html_fn),
+        "admin_pages": lambda: admin_pages_list(),
         # 日志
         "log": lambda *a: print(f"[plugin:{name}]", *a, flush=True),
         "log_event": log_event,
     }
     return api
+
+_ADMIN_PAGES = {}   # tab_id -> {"name": plugin, "title": str, "fn": callable}
+
+def admin_page_register(plugin, tab_id, title, html_fn):
+    try:
+        tab_id = str(tab_id).strip()[:32]
+        if not tab_id:
+            return False
+        _ADMIN_PAGES[tab_id] = {"name": plugin, "title": str(title)[:40], "fn": html_fn}
+        return True
+    except Exception:
+        return False
+
+def admin_pages_list():
+    return [{"id": k, "title": v["title"], "plugin": v["name"]} for k, v in _ADMIN_PAGES.items()]
+
+def admin_pages_render(tab_id, lang):
+    p = _ADMIN_PAGES.get(tab_id)
+    if not p:
+        return ""
+    try:
+        return str(p["fn"](lang) if p["fn"] else "")
+    except Exception as e:
+        return "<p style='color:red'>插件页面错误: %s</p>" % e
 
 def _send_to_uid(uid, obj):
     c = clients.get(str(uid))
@@ -1718,4 +1802,289 @@ reload_dynamic()
 threading.Thread(target=reporter, daemon=True).start()
 log_event("start", "relay %s:%s" % (HOST, PORT))
 print("SFM relay %s:%s" % (HOST, PORT))
-ThreadingTCPServer((HOST, PORT), Handler).serve_forever()
+
+# =====================================================================
+#  UDP 数据面中继（v1.0.10 TCP+UDP 共联）
+#  - 服务器入站监听 UDP 8000；客户端出站 UDP 8001（双向 UDP 通道）
+#  - 用途：建房/入房后，玩家高频数据（pos/motion/bone/action/state/
+#    npc/道具掉落）经 UDP 收发，避免 TCP 慢客户端阻塞与 7000 端口封锁
+#  - 控制面（登录/房间/菜单/聊天/玩具控制）仍走 TCP 7000
+#  - 注册：客户端连上 TCP 后，发 {"t":"udp_register","room":rid,"uid":uid}
+#  - UDP 转发：同房间广播（预序列化一次），带 uid 供接收端识别来源
+# =====================================================================
+UDP_PORT = int(CFG.get("udp_port", 8000))
+UDP_BUFFER = 65536
+_udp_sock = None
+_udp_peers = {}          # (uid) -> {"addr":(ip,port), "room":rid}
+_udp_lock = threading.Lock()
+
+# TCP 通道登记 UDP 对端地址（客户端发 udp_register 后，由 TCP 处理函数调用）
+def udp_register_peer(uid, addr, rid):
+    if not addr:
+        return
+    try:
+        with _udp_lock:
+            _udp_peers[uid] = {"addr": addr, "room": rid or ""}
+    except Exception:
+        pass
+
+def udp_unregister_peer(uid):
+    try:
+        with _udp_lock:
+            _udp_peers.pop(uid, None)
+    except Exception:
+        pass
+
+def udp_broadcast_room(rid, payload_bytes, exclude_uid):
+    with _udp_lock:
+        targets = [(u, p) for u, p in _udp_peers.items() if p.get("room") == rid and u != exclude_uid]
+    for _, p in targets:
+        try:
+            _udp_sock.sendto(payload_bytes, p["addr"])
+        except Exception:
+            pass
+
+def udp_loop():
+    global _udp_sock
+    _udp_sock = socket.socket(socket.AF_INET, socket.SOCK_DGRAM)
+    _udp_sock.setsockopt(socket.SOL_SOCKET, socket.SO_REUSEADDR, 1)
+    _udp_sock.bind(("0.0.0.0", UDP_PORT))
+    print("SFM relay UDP %s:%s" % (HOST, UDP_PORT), flush=True)
+    while True:
+        try:
+            data, addr = _udp_sock.recvfrom(UDP_BUFFER)
+        except Exception:
+            continue
+        try:
+            # 数据包格式: uid\nroom\njson
+            parts = data.split(b"\n", 2)
+            if len(parts) < 3:
+                continue
+            uid = parts[0].decode("utf-8", "replace")
+            rid = parts[1].decode("utf-8", "replace")
+            body = parts[2]
+            if not uid or not rid:
+                continue
+            # 记录/更新对端地址
+            with _udp_lock:
+                _udp_peers[uid] = {"addr": addr, "room": rid}
+            # UDP 探测：客户端发 {"t":"udp_ping"} → 服务器单独回 pong 到源地址（验证 UDP 通路）
+            try:
+                obj = json.loads(body.decode("utf-8", "replace"))
+                if isinstance(obj, dict) and obj.get("t") == "udp_ping":
+                    pong = json.dumps({"t": "udp_pong"}, ensure_ascii=False).encode("utf-8")
+                    _udp_sock.sendto(pong, addr)
+                    continue
+            except Exception:
+                pass
+            # 注入 uid 字段（客户端 HandleRelayLine 靠它识别来源），再原样转发
+            try:
+                obj = json.loads(body.decode("utf-8", "replace"))
+                if isinstance(obj, dict) and "uid" not in obj:
+                    obj["uid"] = uid
+                body = json.dumps(obj, ensure_ascii=False, separators=(",", ":")).encode("utf-8")
+            except Exception:
+                pass
+            udp_broadcast_room(rid, body, uid)
+        except Exception:
+            continue
+
+# 在 TCP 的 hello/room 变化时同步 udp_peers
+def udp_sync_room(uid, rid):
+    try:
+        with _udp_lock:
+            if uid in _udp_peers:
+                _udp_peers[uid]["room"] = rid or ""
+            elif rid:
+                _udp_peers[uid] = {"addr": ("0.0.0.0", 0), "room": rid}
+    except Exception:
+        pass
+
+threading.Thread(target=udp_loop, daemon=True).start()
+
+# =====================================================================
+#  房间模组同步系统（v1.0.10）
+#  - 房主开房时上报 SFMOnlineMods 文件清单（相对路径+MD5+大小）
+#  - 玩家入房时收到房主清单，比对后请求缺失文件
+#  - 服务器按房间保存房主清单，并作为文件转发通道：
+#    玩家 mod_file_req -> 服务器向房主 mod_file_send 要文件 -> 转发给玩家
+#  - 消息：
+#    mod_list       {t:"mod_list", room:rid, files:[{name,md5,size}...]} (房主->服务器)
+#    mod_list_push  {t:"mod_list_push", files:[...]} (服务器->入房玩家)
+#    mod_file_req   {t:"mod_file_req", file:"相对路径"} (玩家->服务器)
+#    mod_file_send  {t:"mod_file_send", file:"相对路径", data:"base64"} (房主->服务器->玩家)
+#    mod_file_push  {t:"mod_file_push", file, data} (服务器->请求玩家)
+# =====================================================================
+MOD_MAX_FILE = 8 * 1024 * 1024   # 单文件最大 8MB
+MOD_MAX_LIST = 200               # 文件数上限
+_room_mods = {}                  # rid -> [files]
+_mod_pending = {}                # uid -> {"file": name, "room": rid}
+
+def mod_handle(client, m):
+    """处理 mod_* 消息（在 dispatch 中调用）"""
+    try:
+        t = m.get("t")
+        uid = client.get("uid", "")
+        rid = client.get("room", "")
+        if not uid or not rid:
+            return
+        if t == "mod_list":
+            # 房主上报清单（只有房主可设）
+            r = rooms.get(rid, {})
+            if r.get("host") != uid:
+                return
+            files = []
+            raw = m.get("files") or []
+            if isinstance(raw, list):
+                for f in raw[:MOD_MAX_LIST]:
+                    if isinstance(f, dict):
+                        files.append({
+                            "name": str(f.get("name", ""))[:256],
+                            "md5": str(f.get("md5", ""))[:64],
+                            "size": int(f.get("size", 0) or 0),
+                        })
+            _room_mods[rid] = files
+            log("房间 %s 模组清单 %d 个" % (rid, len(files)))
+        elif t == "mod_list_push":
+            # 服务器主动推送（房间加入时调用）
+            pass
+        elif t == "mod_file_req":
+            # 玩家请求某文件：转发给房主
+            fname = str(m.get("file", ""))[:256]
+            r = rooms.get(rid, {})
+            host = r.get("host")
+            hc = clients.get(host) if host else None
+            if not fname or not hc:
+                send(client["sock"], {"t": "mod_err", "m": "房主不在线或文件无效"})
+                return
+            _mod_pending[uid] = {"file": fname, "room": rid}
+            send(hc["sock"], {"t": "mod_file_req", "file": fname, "from": uid})
+        elif t == "mod_file_send":
+            # 房主发文件数据：转发给请求者
+            fname = str(m.get("file", ""))[:256]
+            data = str(m.get("data", ""))
+            frm = str(m.get("to", ""))
+            tc = clients.get(frm) if frm else None
+            if tc and tc.get("room") == rid:
+                send(tc["sock"], {"t": "mod_file_push", "file": fname, "data": data})
+    except Exception:
+        pass
+
+def mod_push_list_to(uid, rid):
+    """向玩家推送房主模组清单（入房时调用）"""
+    try:
+        files = _room_mods.get(rid)
+        if not files:
+            return
+        tc = clients.get(uid)
+        if tc:
+            send(tc["sock"], {"t": "mod_list_push", "files": files})
+    except Exception:
+        pass
+
+def mod_room_clean(rid):
+    try:
+        _room_mods.pop(rid, None)
+    except Exception:
+        pass
+
+# =====================================================================
+#  掉落道具同步（v1.0.10）
+#  - ext_item_drop  玩家掉落道具广播（type+坐标+归属）→ 房间广播
+#  - ext_item_perm  归属者设置拾取权限（allow + 指定uid列表）→ 房间广播
+#  - ext_item_pick  玩家请求拾取 → 服务器按权限裁决 → pick_ok/pick_deny
+#  - ext_item_collect_all 玩家回收全部 → 房间广播
+# =====================================================================
+_room_item_perm = {}   # rid -> {"allow": bool, "uids": [..], "owner": uid}
+
+def item_handle(client, m):
+    try:
+        t = m.get("t")
+        uid = client.get("uid", "")
+        rid = client.get("room", "")
+        if not uid or not rid:
+            return
+        r = rooms.get(rid, {})
+        if t == "ext_item_drop":
+            # 附加归属信息后房间广播
+            m = dict(m)
+            m["uid"] = uid
+            m["name"] = client.get("name", "")
+            broadcast_room(rid, m, uid)
+        elif t == "ext_item_perm":
+            # 只有房主/归属者可设置（此处任意玩家可设，供模组用）
+            _room_item_perm[rid] = {
+                "allow": 1 if m.get("allow") else 0,
+                "uids": [str(x) for x in (m.get("uids") or [])],
+                "owner": uid,
+            }
+            m = dict(m)
+            m["uid"] = uid
+            broadcast_room(rid, m, uid)
+        elif t == "ext_item_pick":
+            # 拾取请求：检查归属者的权限设置
+            owner = str(m.get("owner", ""))
+            itype = str(m.get("type", ""))
+            if not itype:
+                return
+            perm = _room_item_perm.get(rid)
+            allowed = True
+            if perm and perm.get("owner") == owner:
+                if not perm.get("allow"):
+                    allowed = False
+                elif perm.get("uids"):
+                    if uid not in perm["uids"]:
+                        allowed = False
+            if allowed:
+                # 通知请求者拾取成功
+                send(client["sock"], {"t": "ext_item_pick_ok", "type": itype, "owner": owner})
+                # 通知归属者该道具已被拾取（如需要移除标记）
+                oc = clients.get(owner)
+                if oc and oc.get("room") == rid:
+                    send(oc["sock"], {"t": "ext_item_pick_ok", "type": itype, "owner": uid})
+                # 广播房间（其它玩家移除对应标记）
+                broadcast_room(rid, {"t": "ext_item_pick_ok", "type": itype, "owner": owner, "by": uid}, uid)
+            else:
+                send(client["sock"], {"t": "ext_item_pick_deny", "m": "该道具不允许拾取"})
+        elif t == "ext_item_collect_all":
+            m = dict(m)
+            m["uid"] = uid
+            m["name"] = client.get("name", "")
+            broadcast_room(rid, m, uid)
+    except Exception:
+        pass
+
+def item_room_clean(rid):
+    try:
+        _room_item_perm.pop(rid, None)
+    except Exception:
+        pass
+
+# =====================================================================
+#  多端口接入（v1.0.8）：部分网络对非标准端口（7000）有 QoS/封锁，
+#  但标准风格端口（8443/8080）通常放行。relay 同时监听多个 TCP 端口，
+#  客户端连接主端口失败时自动尝试备用端口。
+#  config.json 可配置: "alt_ports": "8443,8080"
+# =====================================================================
+_ALT_PORTS = []
+try:
+    for _p in str(CFG.get("alt_ports", "8443,8090")).split(","):
+        _p = _p.strip()
+        if _p.isdigit() and int(_p) != PORT:
+            _ALT_PORTS.append(int(_p))
+except Exception:
+    _ALT_PORTS = [8443, 8090]
+
+def _run_tcp_server(p):
+    try:
+        srv = ThreadingTCPServer((HOST, p), Handler)
+        print("SFM relay TCP %s:%s" % (HOST, p), flush=True)
+        srv.serve_forever()
+    except Exception as e:
+        print("SFM relay listen %s failed: %s" % (p, e), flush=True)
+
+threading.Thread(target=_run_tcp_server, args=(PORT,), daemon=True).start()
+for _ap in _ALT_PORTS:
+    threading.Thread(target=_run_tcp_server, args=(_ap,), daemon=True).start()
+while True:
+    time.sleep(3600)
