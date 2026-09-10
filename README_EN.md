@@ -30,7 +30,7 @@ This project focuses solely on the engineering layer: connecting single-player g
 ## 🚀 Client Usage Tutorial
 
 1. Install the BepInEx environment (game itself) required by the integration package.
-2. The client is **open source**: source code at [SFMOnline.Client/](SFMOnline.Client/) (encryption removed, directly compilable). If you prefer prebuilt, download the compiled DLL from this repository [client/SFMOnline_1.0.11.dll](client/SFMOnline_1.0.11.dll), rename it to `SFMOnline.dll`, and place it in `BepInEx/plugins/`.
+2. The client is **open source**: source code at [SFMOnline.Client/](SFMOnline.Client/) (encryption removed, directly compilable). If you prefer prebuilt, download the compiled DLL from this repository [client/SFMOnline_1.0.12.dll](client/SFMOnline_1.0.12.dll), rename it to `SFMOnline.dll`, and place it in `BepInEx/plugins/`.
 3. Start the game: `F10` online menu, `F12` normal menu, `F11` chat.
 4. After logging in: Press `F10` → Select a server from the main server list → Create/join a room on the room page; or create a room via LAN/internal network penetration.
 5. Press `Alt+F3` in-game to force a complete restoration of all control states at any time.
@@ -52,8 +52,10 @@ For detailed instructions, please refer to [Client Usage Guide](client/Client-Us
 
 - [SFMOnline_Relay_Windows_v1.0.7.zip](release/SFMOnline_Relay_Windows_v1.0.7.zip): Windows One-Click Version (Double-click to start the online server after extraction.bat)
 - [SFMOnline_Relay_Linux_v1.0.7.zip](release/SFMOnline_Relay_Linux_v1.0.7.zip): One-click Linux version (after decompression, run ./start.sh)
-- [SFMOnline_Client_v1.0.11.zip](release/SFMOnline_Client_v1.0.11.zip): Client integration package (after decompression, put the contents of BepInEx into the game directory, or directly download client/SFMOnline_1.0.11.dll and put it into BepInEx/plugins/).
+- [SFMOnline_Client_v1.0.12.zip](release/SFMOnline_Client_v1.0.12.zip): Client integration package (after decompression, put the contents of BepInEx into the game directory, or directly download client/SFMOnline_1.0.12.dll and put it into BepInEx/plugins/).
 
+> **Client v1.0.12 Update**: **Fixed "TCP port unreachable" false alarm** (connect timeout 6s → 20s, slow handshakes on international routes no longer misreported); **automatic port fallback** (when the main port 7000 is QoS-blocked, the client automatically tries alternate ports 8443/8090; the server listens on them); friendlier connection messages.
+>
 > **Client v1.0.11 Update**: **Face expression sync** (sync once on join, then incremental on change); **much higher sync rate** (motion up to 30Hz, coordinates on every UDP packet); **timestamp lag compensation** (sender ms timestamp + RTT-based position prediction, L4D-style, noticeably smoother); **fix invisible players** (high-freq motion updates the position table directly with stage, no longer dependent on low-freq pos packets); **UDP health probe** (3s ping, auto-fallback to TCP with a notice if unreachable); **UDP port now sent by server** (no more hardcoded 8000, works with any server port); **big map moved to a right-side overlay** (no longer blocks menus/player lists).
 >
 > **Client v1.0.10 Update**: TCP+UDP co-linking (in-room high-frequency sync via UDP, menus/controls stay on TCP, bypasses port-7000 blocking); **automatic room mod sync** (host mod manifest → auto-compare on join → auto-download missing files → hot-load → auto-reload game); **per-map NPC authority sync** (first player in a map is authority, full-map NPC sync, authority transfers on leave); **drop item sync** (see others' dropped items with player-name labels, pick them up, permission control, F1 recall all); **multi-channel email captcha** (Resend + QQ auto-fallback); **plugin admin page extension**.
